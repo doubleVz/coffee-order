@@ -54,7 +54,7 @@ function OrderSuccessContent() {
           <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
             {orderId && (
               <Link
-                href={`/order/${orderId}`}
+                href={`/order?id=${orderId}`}
                 className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-[#654321] to-[#B26A3B] text-white font-bold text-xs sm:text-sm shadow-md hover:scale-102 active:scale-98 transition-all"
               >
                 Theo dõi tiến độ đơn hàng

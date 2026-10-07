@@ -1,3 +1,6 @@
+'use client'
+
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import {
   Coffee,
@@ -15,7 +18,7 @@ import {
 } from 'lucide-react'
 import { Header } from '@/components/customer/Header'
 import { Footer } from '@/components/customer/Footer'
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/utils'
 import type { Product, Category } from '@/types'
 import { MOCK_CATEGORIES, MOCK_PRODUCTS } from '@/lib/data/mock-data'
@@ -28,32 +31,33 @@ const categoryIcons: Record<string, React.ReactNode> = {
   'nuoc-ep': <GlassWater className="h-6 w-6" />,
 }
 
-export default async function HomePage() {
-  let categories: Category[] = []
-  let bestSellers: Product[] = []
+export default function HomePage() {
+  const [categories, setCategories] = useState<Category[]>(MOCK_CATEGORIES)
+  const [bestSellers, setBestSellers] = useState<Product[]>(() =>
+    MOCK_PRODUCTS.filter((p) => p.is_best_seller).slice(0, 6)
+  )
 
-  try {
-    const supabase = await createServerSupabaseClient()
-    const [catsRes, prodsRes] = await Promise.allSettled([
-      supabase.from('categories').select('*').eq('is_active', true).order('sort_order'),
-      supabase.from('products').select('*, category:categories(*)').eq('is_available', true).eq('is_best_seller', true).order('sort_order').limit(6),
-    ])
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const supabase = createClient()
+        const [catsRes, prodsRes] = await Promise.allSettled([
+          supabase.from('categories').select('*').eq('is_active', true).order('sort_order'),
+          supabase.from('products').select('*, category:categories(*)').eq('is_available', true).eq('is_best_seller', true).order('sort_order').limit(6),
+        ])
 
-    if (catsRes.status === 'fulfilled' && catsRes.value.data && catsRes.value.data.length > 0) {
-      categories = catsRes.value.data as Category[]
-    } else {
-      categories = MOCK_CATEGORIES
+        if (catsRes.status === 'fulfilled' && catsRes.value.data && catsRes.value.data.length > 0) {
+          setCategories(catsRes.value.data as Category[])
+        }
+        if (prodsRes.status === 'fulfilled' && prodsRes.value.data && prodsRes.value.data.length > 0) {
+          setBestSellers(prodsRes.value.data as Product[])
+        }
+      } catch {
+        // Keep initial mock data
+      }
     }
-
-    if (prodsRes.status === 'fulfilled' && prodsRes.value.data && prodsRes.value.data.length > 0) {
-      bestSellers = prodsRes.value.data as Product[]
-    } else {
-      bestSellers = MOCK_PRODUCTS.filter((p) => p.is_best_seller).slice(0, 6)
-    }
-  } catch {
-    categories = MOCK_CATEGORIES
-    bestSellers = MOCK_PRODUCTS.filter((p) => p.is_best_seller).slice(0, 6)
-  }
+    loadData()
+  }, [])
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] text-[#231709] flex flex-col font-sans selection:bg-amber-200">
