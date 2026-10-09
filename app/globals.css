@@ -89,6 +89,8 @@ html {
   box-shadow: 0 20px 35px -8px rgba(56, 35, 20, 0.12), 0 8px 16px -4px rgba(178, 106, 59, 0.08);
 }
 
+
+
 /* Print styles for QR Code */
 @media print {
   .no-print {

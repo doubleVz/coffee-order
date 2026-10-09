@@ -44,12 +44,12 @@ export function Footer() {
             <ul className="space-y-3 text-xs sm:text-sm">
               <li className="flex items-start gap-2.5 text-stone-300">
                 <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-amber-400" />
-                <span>123 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP. Hồ Chí Minh</span>
+                <span>số 182, đường Lê Duẩn, phường Trường Vinh, tỉnh Nghệ An</span>
               </li>
               <li className="flex items-center gap-2.5 text-stone-300">
                 <Phone className="h-4 w-4 shrink-0 text-amber-400" />
                 <a href="tel:0901234567" className="hover:text-white transition-colors">
-                  0901 234 567
+                  0123456789
                 </a>
               </li>
             </ul>
@@ -84,7 +84,7 @@ export function Footer() {
         <div className="border-t border-stone-800/80 mt-12 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-stone-500">
           <p>© {new Date().getFullYear()} Coffee House Roastery. All rights reserved.</p>
           <p className="flex items-center gap-1 text-stone-400">
-            Pha chế với <Heart className="w-3.5 h-3.5 text-red-500 fill-current" /> tại Sài Gòn
+            Pha chế với <Heart className="w-3.5 h-3.5 text-red-500 fill-current" /> tại Nghệ An
           </p>
         </div>
       </div>

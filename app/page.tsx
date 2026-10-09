@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import type { CSSProperties } from 'react'
 import Link from 'next/link'
 import {
   Coffee,
@@ -31,7 +32,383 @@ const categoryIcons: Record<string, React.ReactNode> = {
   'nuoc-ep': <GlassWater className="h-6 w-6" />,
 }
 
+
+function FallingPetals() {
+  const petals = Array.from({ length: 22 }, (_, i) => ({
+    id: i,
+    left: `${(i * 37) % 101}%`,
+    size: 10 + ((i * 7) % 12),
+    duration: 9 + ((i * 11) % 10),
+    delay: -((i * 13) % 18),
+    drift: -70 + ((i * 29) % 141),
+    rotate: 180 + ((i * 43) % 361),
+    opacity: 0.28 + ((i * 17) % 45) / 100,
+  }))
+
+  return (
+    <>
+      <style jsx global>{`
+
+        .welcome-gate {
+          position: fixed;
+          inset: 0;
+          z-index: 100;
+          overflow: hidden;
+          background: #231709;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: visibility 0s linear 1.35s;
+        }
+
+        .welcome-gate--open {
+          visibility: hidden;
+        }
+
+        .welcome-door {
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          width: 50%;
+          z-index: 2;
+          background:
+            linear-gradient(90deg, rgba(255,255,255,0.025), transparent 25%, rgba(0,0,0,0.12)),
+            linear-gradient(135deg, #2b1b0d 0%, #4b2d16 48%, #231709 100%);
+          box-shadow: inset 0 0 70px rgba(0,0,0,0.28);
+          transition:
+            transform 1.25s cubic-bezier(0.77, 0, 0.175, 1),
+            box-shadow 1.25s ease;
+        }
+
+        .welcome-door::before {
+          content: "";
+          position: absolute;
+          top: 7%;
+          bottom: 7%;
+          width: 72%;
+          border: 1px solid rgba(244, 190, 102, 0.18);
+          background:
+            linear-gradient(rgba(255,255,255,0.025), rgba(0,0,0,0.08)),
+            repeating-linear-gradient(
+              90deg,
+              transparent 0,
+              transparent 25px,
+              rgba(255,255,255,0.018) 26px,
+              transparent 27px
+            );
+        }
+
+        .welcome-door--left {
+          left: 0;
+          transform-origin: left center;
+        }
+
+        .welcome-door--left::before {
+          right: 7%;
+          border-radius: 0 22px 22px 0;
+        }
+
+        .welcome-door--right {
+          right: 0;
+          transform-origin: right center;
+          background:
+            linear-gradient(270deg, rgba(255,255,255,0.025), transparent 25%, rgba(0,0,0,0.12)),
+            linear-gradient(225deg, #2b1b0d 0%, #4b2d16 48%, #231709 100%);
+        }
+
+        .welcome-door--right::before {
+          left: 7%;
+          border-radius: 22px 0 0 22px;
+        }
+
+        .welcome-gate--open .welcome-door--left {
+          transform: translateX(-100%);
+          box-shadow: 0 0 0 rgba(0,0,0,0);
+        }
+
+        .welcome-gate--open .welcome-door--right {
+          transform: translateX(100%);
+          box-shadow: 0 0 0 rgba(0,0,0,0);
+        }
+
+        .welcome-content {
+          position: relative;
+          z-index: 4;
+          width: min(90vw, 480px);
+          text-align: center;
+          color: white;
+          transition:
+            opacity 0.35s ease,
+            transform 0.75s cubic-bezier(0.77, 0, 0.175, 1);
+        }
+
+        .welcome-gate--open .welcome-content {
+          opacity: 0;
+          transform: scale(0.92);
+          pointer-events: none;
+        }
+
+        .welcome-logo {
+          width: 64px;
+          height: 64px;
+          margin: 0 auto 22px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid rgba(245, 193, 103, 0.55);
+          border-radius: 20px;
+          color: #f5c167;
+          background: rgba(255,255,255,0.06);
+          box-shadow:
+            0 0 0 8px rgba(245,193,103,0.035),
+            0 18px 50px rgba(0,0,0,0.28);
+          backdrop-filter: blur(8px);
+        }
+
+        .welcome-subtitle {
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.42em;
+          color: #e7bd7b;
+          margin-left: 0.42em;
+        }
+
+        .welcome-content h2 {
+          margin-top: 10px;
+          font-size: clamp(36px, 8vw, 64px);
+          line-height: 0.95;
+          letter-spacing: -0.045em;
+          font-weight: 900;
+          background: linear-gradient(135deg, #fff9ed, #e6bd7d);
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+        }
+
+        .welcome-content p {
+          margin-top: 17px;
+          color: rgba(255,255,255,0.68);
+          font-size: 14px;
+        }
+
+        .welcome-button {
+          margin: 32px auto 0;
+          min-height: 58px;
+          padding: 0 26px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 14px;
+          border: 1px solid rgba(255, 214, 145, 0.42);
+          border-radius: 18px;
+          color: #2b1b0d;
+          background: linear-gradient(135deg, #fff7e7, #e8bd7c);
+          box-shadow:
+            0 16px 45px rgba(0,0,0,0.3),
+            inset 0 1px 0 rgba(255,255,255,0.8);
+          font-size: 14px;
+          font-weight: 800;
+          cursor: pointer;
+          transition:
+            transform 0.25s ease,
+            box-shadow 0.25s ease;
+        }
+
+        .welcome-button:hover {
+          transform: translateY(-3px) scale(1.025);
+          box-shadow:
+            0 22px 55px rgba(0,0,0,0.38),
+            0 0 0 6px rgba(232,189,124,0.08);
+        }
+
+        .welcome-button:active {
+          transform: translateY(0) scale(0.985);
+        }
+
+        .welcome-hint {
+          display: block;
+          margin-top: 17px;
+          font-size: 10px;
+          letter-spacing: 0.16em;
+          text-transform: uppercase;
+          color: rgba(255,255,255,0.35);
+        }
+
+        @media (max-width: 640px) {
+          .welcome-door::before {
+            width: 82%;
+          }
+
+          .welcome-content h2 {
+            font-size: 42px;
+          }
+
+          .welcome-button {
+            min-height: 54px;
+            padding: 0 21px;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .welcome-door,
+          .welcome-content,
+          .welcome-gate {
+            transition-duration: 0.01ms !important;
+          }
+        }
+
+        @keyframes coffeePetalFall {
+          0% {
+            transform: translate3d(0, -12vh, 0) rotate(0deg);
+          }
+          25% {
+            transform: translate3d(var(--petal-drift), 25vh, 0) rotate(90deg);
+          }
+          50% {
+            transform: translate3d(calc(var(--petal-drift) * -0.45), 50vh, 0) rotate(180deg);
+          }
+          75% {
+            transform: translate3d(calc(var(--petal-drift) * 0.65), 75vh, 0) rotate(270deg);
+          }
+          100% {
+            transform: translate3d(0, 112vh, 0) rotate(var(--petal-rotate));
+          }
+        }
+
+        .coffee-petal {
+          position: fixed;
+          top: -40px;
+          z-index: 40;
+          pointer-events: none;
+          width: var(--petal-size);
+          height: calc(var(--petal-size) * 0.68);
+          border-radius: 100% 0 100% 0;
+          background: linear-gradient(
+            135deg,
+            rgba(255, 214, 224, 0.95),
+            rgba(244, 164, 180, 0.82)
+          );
+          box-shadow:
+            0 2px 7px rgba(120, 58, 72, 0.12),
+            inset -2px -2px 3px rgba(170, 76, 96, 0.12);
+          animation: coffeePetalFall var(--petal-duration) linear var(--petal-delay) infinite;
+          will-change: transform;
+        }
+
+        .coffee-petal::after {
+          content: "";
+          position: absolute;
+          left: 48%;
+          top: 8%;
+          width: 1px;
+          height: 82%;
+          background: rgba(164, 78, 96, 0.18);
+          transform: rotate(25deg);
+          transform-origin: center;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .coffee-petal {
+            display: none;
+          }
+        }
+      `}</style>
+
+      <div aria-hidden="true" className="fixed inset-0 z-40 pointer-events-none overflow-hidden">
+        {petals.map((petal) => (
+          <span
+            key={petal.id}
+            className="coffee-petal"
+            style={
+              {
+                left: petal.left,
+                "--petal-size": `${petal.size}px`,
+                "--petal-duration": `${petal.duration}s`,
+                "--petal-delay": `${petal.delay}s`,
+                "--petal-drift": `${petal.drift}px`,
+                "--petal-rotate": `${petal.rotate}deg`,
+                opacity: petal.opacity,
+              } as CSSProperties
+            }
+          />
+        ))}
+      </div>
+    </>
+  )
+}
+
+
+function WelcomeGate({
+  open,
+  onOpen,
+}: {
+  open: boolean
+  onOpen: () => void
+}) {
+  return (
+    <div
+      aria-hidden={open}
+      className={`welcome-gate ${open ? 'welcome-gate--open' : ''}`}
+    >
+      <div className="welcome-door welcome-door--left" />
+      <div className="welcome-door welcome-door--right" />
+
+      <div className="welcome-content">
+        <div className="welcome-logo">
+          <Coffee className="w-7 h-7" />
+        </div>
+
+        <div className="welcome-subtitle">WELCOME TO</div>
+        <h2>COFFEE HOUSE</h2>
+        <p>Một chút cà phê, một chút thảnh thơi.</p>
+
+        <button
+          type="button"
+          onClick={onOpen}
+          className="welcome-button"
+          disabled={open}
+        >
+          <span>Khám phá không gian</span>
+          <ArrowRight className="w-5 h-5" />
+        </button>
+
+        <span className="welcome-hint">Bấm để bước vào</span>
+      </div>
+    </div>
+  )
+}
+
 export default function HomePage() {
+  const [phase, setPhase] = useState<'gate' | 'transitioning' | 'content'>(() => {
+    // Chỉ hiện WelcomeGate 1 lần duy nhất mỗi phiên truy cập
+    if (typeof window !== 'undefined' && sessionStorage.getItem('coffee_gate_opened')) {
+      return 'content'
+    }
+    return 'gate'
+  })
+
+  const handleOpen = () => {
+    setPhase('transitioning')
+    sessionStorage.setItem('coffee_gate_opened', '1')
+    // Sau khi animation cửa mở xong (~1.4s), xóa gate khỏi DOM
+    setTimeout(() => setPhase('content'), 1400)
+  }
+
+  return (
+    <>
+      <FallingPetals />
+      {phase !== 'content' && (
+        <WelcomeGate
+          open={phase === 'transitioning'}
+          onOpen={handleOpen}
+        />
+      )}
+      {phase !== 'gate' && <MainContent />}
+    </>
+  )
+}
+
+function MainContent() {
   const [categories, setCategories] = useState<Category[]>(MOCK_CATEGORIES)
   const [bestSellers, setBestSellers] = useState<Product[]>(() =>
     MOCK_PRODUCTS.filter((p) => p.is_best_seller).slice(0, 6)
@@ -435,3 +812,4 @@ export default function HomePage() {
     </div>
   )
 }
+
