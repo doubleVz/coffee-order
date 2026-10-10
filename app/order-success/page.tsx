@@ -11,6 +11,8 @@ function OrderSuccessContent() {
   const searchParams = useSearchParams()
   const orderId = searchParams.get('id')
   const orderCode = searchParams.get('code')
+  const paid = searchParams.get('paid')
+  const method = searchParams.get('method')
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] text-[#231709] flex flex-col font-sans">
@@ -42,8 +44,17 @@ function OrderSuccessContent() {
             </div>
           )}
 
+          {paid === 'true' && (
+            <div className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-100/80 border border-emerald-300 text-emerald-900 text-xs font-bold max-w-sm">
+              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>
+                Đã thanh toán thành công ({method === 'TRANSFER' ? 'Chuyển khoản VietQR' : 'Tiền mặt'}) • Nhân viên đã xác nhận
+              </span>
+            </div>
+          )}
+
           <p className="mt-4 text-xs sm:text-sm text-stone-600 leading-relaxed max-w-sm mx-auto">
-            Barista tại quầy đang bắt đầu pha chế đồ uống cho bạn. Thời gian hoàn thành dự kiến từ <strong>3 - 5 phút</strong>.
+            Đơn hàng đã hoàn tất thanh toán. Barista tại quầy đang bắt đầu pha chế đồ uống cho bạn. Thời gian hoàn thành dự kiến từ <strong>3 - 5 phút</strong>.
           </p>
 
           <div className="mt-4 p-3 bg-stone-50 rounded-2xl text-[11px] text-stone-500 flex items-center justify-center gap-2">

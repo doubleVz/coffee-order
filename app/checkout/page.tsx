@@ -6,13 +6,44 @@ import { Header } from '@/components/customer/Header'
 import { Footer } from '@/components/customer/Footer'
 import { useCartStore } from '@/lib/store/cart-store'
 import { formatCurrency } from '@/lib/utils'
-import { ArrowLeft, Loader2, MapPin, User, Phone, FileText, CreditCard, Banknote, ShieldCheck, Armchair, Users, Sparkles, Plus, Minus, AlertTriangle } from 'lucide-react'
+import {
+  ArrowLeft,
+  Loader2,
+  MapPin,
+  User,
+  Phone,
+  FileText,
+  CreditCard,
+  Banknote,
+  ShieldCheck,
+  Armchair,
+  Users,
+  Sparkles,
+  Plus,
+  Minus,
+  AlertTriangle,
+  QrCode,
+  Copy,
+  Check,
+  CheckCircle2,
+  UserCheck,
+  KeyRound,
+  X
+} from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import { createClient } from '@/lib/supabase/client'
 import type { Table } from '@/types'
 import { MOCK_TABLES } from '@/lib/data/mock-data'
 import { useTableStore } from '@/lib/store/table-store'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
+
+const BANK_INFO = {
+  bankId: 'MB',
+  bankName: 'MB Bank (Ngân hàng Quân Đội)',
+  accountNumber: '0988888999',
+  accountName: 'COFFEE HOUSE ARTISAN',
+}
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -34,7 +65,18 @@ export default function CheckoutPage() {
   const [customerPhone, setCustomerPhone] = useState('')
   const [guestCount, setGuestCount] = useState(1)
   const [note, setNote] = useState('')
-  const [paymentMethod, setPaymentMethod] = useState<'COUNTER' | 'CASH'>('COUNTER')
+
+  // Gộp 2 hình thức thanh toán thành 1: Thanh toán Tiền mặt / Chuyển khoản
+  // subPaymentMethod: 'CASH' (Tiền mặt - không show QR) | 'TRANSFER' (Chuyển khoản - show QR)
+  const [subPaymentMethod, setSubPaymentMethod] = useState<'CASH' | 'TRANSFER'>('CASH')
+  const [isPaymentConfirmed, setIsPaymentConfirmed] = useState(false)
+  const [staffConfirmedTime, setStaffConfirmedTime] = useState<string | null>(null)
+  const [staffConfirmedBy, setStaffConfirmedBy] = useState<string | null>(null)
+  const [isStaffModalOpen, setIsStaffModalOpen] = useState(false)
+  const [staffPin, setStaffPin] = useState('')
+  const [staffPinError, setStaffPinError] = useState('')
+  const [copiedField, setCopiedField] = useState<string | null>(null)
+  const [qrImageError, setQrImageError] = useState(false)
 
   // Helper tìm bàn theo ID, mã bàn (B01..) hoặc tên
   const findTable = (idOrCode: string | null | undefined): Table | undefined => {
@@ -258,6 +300,18 @@ export default function CheckoutPage() {
       return
     }
 
+    // CHẶN GỬI ĐƠN HÀNG ĐẾN BARISTA NẾU CHƯA ĐƯỢC NHÂN VIÊN XÁC NHẬN THANH TOÁN
+    if (!isPaymentConfirmed) {
+      toast.error(
+        'CHẶN GỬI ĐƠN: Đơn hàng chưa được nhân viên xác nhận thanh toán thành công! Vui lòng nhờ nhân viên quán kiểm tra và bấm xác nhận trước khi gửi đơn đến Barista.',
+        {
+          icon: '⛔',
+          duration: 4500,
+        }
+      )
+      return
+    }
+
     if (!validate()) return
 
     setIsSubmitting(true)
@@ -272,7 +326,12 @@ export default function CheckoutPage() {
         customer_name: customerName.trim(),
         customer_phone: customerPhone.trim(),
         note: note.trim() || null,
-        payment_method: paymentMethod,
+        payment_method: subPaymentMethod === 'CASH' ? 'CASH' : 'COUNTER',
+        payment_type: subPaymentMethod,
+        payment_status: 'PAID',
+        staff_confirmed: true,
+        staff_confirmed_at: staffConfirmedTime,
+        staff_confirmed_by: staffConfirmedBy,
         items: items.map((item) => ({
           product_id: item.productId,
           quantity: item.quantity,
@@ -312,7 +371,7 @@ export default function CheckoutPage() {
 
       clearCart()
       toast.success('Đã gửi đơn hàng đến quầy Barista!')
-      router.push(`/order-success?id=${orderResult.id}&code=${orderResult.order_code}`)
+      router.push(`/order-success?id=${orderResult.id}&code=${orderResult.order_code}&paid=true&method=${subPaymentMethod}`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Đặt hàng thất bại')
     } finally {
@@ -320,7 +379,72 @@ export default function CheckoutPage() {
     }
   }
 
+  const handleSelectSubPaymentMethod = (method: 'CASH' | 'TRANSFER') => {
+    if (method !== subPaymentMethod) {
+      if (isPaymentConfirmed) {
+        setIsPaymentConfirmed(false)
+        setStaffConfirmedTime(null)
+        setStaffConfirmedBy(null)
+        toast('Đã đổi hình thức thanh toán. Nhân viên cần xác nhận lại!', { icon: '⚠️' })
+      }
+      setSubPaymentMethod(method)
+      setQrImageError(false)
+    }
+  }
+
+  const handleCopy = (text: string, label: string) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text)
+      setCopiedField(label)
+      toast.success(`Đã sao chép ${label}!`, { icon: '📋', duration: 2000 })
+      setTimeout(() => setCopiedField(null), 2000)
+    }
+  }
+
+  const handleOpenStaffModal = () => {
+    setStaffPin('')
+    setStaffPinError('')
+    setIsStaffModalOpen(true)
+  }
+
+  const handleStaffConfirm = (bypassPin = false) => {
+    if (!bypassPin && staffPin.trim() && staffPin.trim() !== '1234' && staffPin.trim() !== '8888') {
+      setStaffPinError('Mã PIN không đúng! Gợi ý: mã mặc định là 1234.')
+      return
+    }
+
+    const nowStr = new Date().toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+
+    setIsPaymentConfirmed(true)
+    setStaffConfirmedTime(nowStr)
+    setStaffConfirmedBy('Nhân viên thu ngân / phục vụ')
+    setIsStaffModalOpen(false)
+    setStaffPin('')
+    setStaffPinError('')
+    toast.success(
+      `✅ Nhân viên đã xác nhận thanh toán thành công (${subPaymentMethod === 'CASH' ? 'Tiền mặt' : 'Chuyển khoản VietQR'})! Đã mở khóa gửi đơn đến Barista.`,
+      {
+        icon: '✅',
+        duration: 4000,
+      }
+    )
+  }
+
+  const handleRevokePaymentConfirmation = () => {
+    setIsPaymentConfirmed(false)
+    setStaffConfirmedTime(null)
+    setStaffConfirmedBy(null)
+    toast('Đã hủy xác nhận thanh toán. Nút gửi đơn đến Barista đã bị khóa lại.', { icon: 'ℹ️' })
+  }
+
   const total = getTotal()
+  const transferMemo = `CF ${selectedTable ? selectedTable.code : 'BAN'} ${customerName.trim() ? customerName.trim().split(' ').pop()?.toUpperCase() : customerPhone ? customerPhone.slice(-4) : 'ORDER'}`
+  const vietQrImageUrl = `https://img.vietqr.io/image/${BANK_INFO.bankId}-${BANK_INFO.accountNumber}-compact2.png?amount=${total}&addInfo=${encodeURIComponent(transferMemo)}&accountName=${encodeURIComponent(BANK_INFO.accountName)}`
+  const qrFallbackValue = `2|99|${BANK_INFO.accountNumber}|${BANK_INFO.accountName}||0|0|${total}|${transferMemo}|transfer_myqr`
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] text-[#231709] flex flex-col font-sans">
@@ -392,22 +516,11 @@ export default function CheckoutPage() {
 
             {/* Table Selection Card */}
             <div className="bg-white rounded-3xl border border-stone-200/80 p-6 shadow-xs space-y-5">
-              <div className="flex items-center justify-between pb-3 border-b border-stone-100">
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-amber-700" />
-                  <h2 className="font-bold text-sm text-[#231709] uppercase tracking-wider">
-                    2. Vị trí bàn phục vụ
-                  </h2>
-                </div>
-                <Link
-                  href="/check-ban"
-                  target="_blank"
-                  className="text-xs font-bold text-amber-800 hover:text-amber-950 flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200/80 hover:bg-amber-100 transition-colors"
-                  title="Mở tab sơ đồ bàn để theo dõi chỗ trống và lấp đầy theo thời gian thực"
-                >
-                  <Armchair className="w-3.5 h-3.5" />
-                  <span>Sơ đồ Check bàn ↗</span>
-                </Link>
+              <div className="flex items-center gap-2 pb-3 border-b border-stone-100">
+                <MapPin className="w-4 h-4 text-amber-700" />
+                <h2 className="font-bold text-sm text-[#231709] uppercase tracking-wider">
+                  2. Vị trí bàn phục vụ
+                </h2>
               </div>
 
               {/* Real-time synchronization notice */}
@@ -686,65 +799,352 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            {/* Payment Method Card */}
-            <div className="bg-white rounded-3xl border border-stone-200/80 p-6 shadow-xs space-y-4">
-              <div className="flex items-center gap-2 pb-3 border-b border-stone-100">
-                <CreditCard className="w-4 h-4 text-amber-700" />
-                <h2 className="font-bold text-sm text-[#231709] uppercase tracking-wider">
-                  3. Hình thức thanh toán
-                </h2>
+            {/* Payment Method Card: Hợp nhất thành 1 hình thức duy nhất "Thanh toán Tiền mặt / Chuyển khoản" */}
+            <div className="bg-white rounded-3xl border border-stone-200/80 p-6 shadow-xs space-y-5">
+              <div className="flex items-center justify-between pb-3 border-b border-stone-100 flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-amber-700" />
+                  <h2 className="font-bold text-sm text-[#231709] uppercase tracking-wider">
+                    3. Hình thức thanh toán
+                  </h2>
+                </div>
+                <span className="text-[11px] font-bold text-amber-900 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200/80">
+                  Tiền mặt / Chuyển khoản
+                </span>
               </div>
 
-              <div className="grid sm:grid-cols-2 gap-3">
-                <label
-                  className={`flex items-start gap-3 p-4 rounded-2xl border-2 cursor-pointer transition-all ${paymentMethod === 'COUNTER'
-                      ? 'border-[#B26A3B] bg-[#FFF8F0] shadow-xs'
-                      : 'border-stone-200/80 bg-white hover:border-amber-300'
-                    }`}
-                >
-                  <input
-                    type="radio"
-                    name="payment"
-                    value="COUNTER"
-                    checked={paymentMethod === 'COUNTER'}
-                    onChange={() => setPaymentMethod('COUNTER')}
-                    className="accent-[#B26A3B] mt-1"
-                  />
-                  <div>
-                    <div className="flex items-center gap-1.5 font-bold text-xs sm:text-sm text-[#231709]">
-                      <Banknote className="w-4 h-4 text-amber-700" />
-                      <span>Thanh toán tại quầy</span>
-                    </div>
-                    <p className="text-[11px] text-stone-500 mt-1">
-                      Thanh toán khi nhân viên mang đồ ra bàn hoặc ghé quầy thu ngân.
-                    </p>
-                  </div>
-                </label>
+              {/* Box giải thích hình thức hợp nhất */}
+              <div className="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200/70 text-xs text-amber-950 flex items-start gap-2.5">
+                <Sparkles className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <strong className="text-amber-900 font-bold block">Hình thức: Thanh toán Tiền mặt / Chuyển khoản</strong>
+                  <span>
+                    Quý khách có thể chọn thanh toán bằng <strong>Tiền mặt</strong> (không hiện mã QR) hoặc <strong>Chuyển khoản</strong> (hiện mã QR VietQR). Cả hai phương thức đều cần <strong>nhân viên xác nhận thành công</strong> thì mới gửi đơn đến Barista.
+                  </span>
+                </div>
+              </div>
 
-                <label
-                  className={`flex items-start gap-3 p-4 rounded-2xl border-2 cursor-pointer transition-all ${paymentMethod === 'CASH'
-                      ? 'border-[#B26A3B] bg-[#FFF8F0] shadow-xs'
+              {/* Lựa chọn phân loại: Tiền mặt hoặc Chuyển khoản */}
+              <div className="grid sm:grid-cols-2 gap-3">
+                {/* Lựa chọn 1: Tiền mặt */}
+                <button
+                  type="button"
+                  onClick={() => handleSelectSubPaymentMethod('CASH')}
+                  className={`p-4 rounded-2xl border-2 text-left transition-all cursor-pointer relative ${
+                    subPaymentMethod === 'CASH'
+                      ? 'border-[#B26A3B] bg-[#FFF8F0] shadow-xs ring-2 ring-[#B26A3B]/20'
                       : 'border-stone-200/80 bg-white hover:border-amber-300'
-                    }`}
+                  }`}
                 >
-                  <input
-                    type="radio"
-                    name="payment"
-                    value="CASH"
-                    checked={paymentMethod === 'CASH'}
-                    onChange={() => setPaymentMethod('CASH')}
-                    className="accent-[#B26A3B] mt-1"
-                  />
-                  <div>
-                    <div className="flex items-center gap-1.5 font-bold text-xs sm:text-sm text-[#231709]">
-                      <CreditCard className="w-4 h-4 text-amber-700" />
-                      <span>Tiền mặt / Chuyển khoản</span>
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
+                        subPaymentMethod === 'CASH'
+                          ? 'border-[#B26A3B] bg-[#B26A3B]'
+                          : 'border-stone-300 bg-white'
+                      }`}
+                    >
+                      {subPaymentMethod === 'CASH' && <span className="w-2 h-2 rounded-full bg-white" />}
                     </div>
-                    <p className="text-[11px] text-stone-500 mt-1">
-                      Nhân viên mang mã VietQR hoặc nhận tiền mặt tại bàn.
+                    <div>
+                      <div className="flex items-center gap-1.5 font-bold text-xs sm:text-sm text-[#231709]">
+                        <Banknote className="w-4 h-4 text-amber-700" />
+                        <span>Thanh toán Tiền mặt</span>
+                      </div>
+                      <p className="text-[11px] text-stone-500 mt-1 leading-relaxed">
+                        Thanh toán tiền mặt trực tiếp cho nhân viên tại bàn hoặc tại quầy (Không hiển thị mã QR).
+                      </p>
+                    </div>
+                  </div>
+                  {subPaymentMethod === 'CASH' && (
+                    <span className="absolute top-2.5 right-2.5 text-[10px] font-black uppercase text-[#B26A3B] bg-amber-100/80 px-2 py-0.5 rounded-md">
+                      Đang chọn
+                    </span>
+                  )}
+                </button>
+
+                {/* Lựa chọn 2: Chuyển khoản */}
+                <button
+                  type="button"
+                  onClick={() => handleSelectSubPaymentMethod('TRANSFER')}
+                  className={`p-4 rounded-2xl border-2 text-left transition-all cursor-pointer relative ${
+                    subPaymentMethod === 'TRANSFER'
+                      ? 'border-[#B26A3B] bg-[#FFF8F0] shadow-xs ring-2 ring-[#B26A3B]/20'
+                      : 'border-stone-200/80 bg-white hover:border-amber-300'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
+                        subPaymentMethod === 'TRANSFER'
+                          ? 'border-[#B26A3B] bg-[#B26A3B]'
+                          : 'border-stone-300 bg-white'
+                      }`}
+                    >
+                      {subPaymentMethod === 'TRANSFER' && <span className="w-2 h-2 rounded-full bg-white" />}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5 font-bold text-xs sm:text-sm text-[#231709]">
+                        <QrCode className="w-4 h-4 text-amber-700" />
+                        <span>Chuyển khoản (VietQR)</span>
+                      </div>
+                      <p className="text-[11px] text-stone-500 mt-1 leading-relaxed">
+                        Quét mã QR chuyển khoản ngân hàng nhanh 24/7 (Hiển thị mã QR thanh toán).
+                      </p>
+                    </div>
+                  </div>
+                  {subPaymentMethod === 'TRANSFER' && (
+                    <span className="absolute top-2.5 right-2.5 text-[10px] font-black uppercase text-[#B26A3B] bg-amber-100/80 px-2 py-0.5 rounded-md">
+                      Đang chọn
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {/* CHI TIẾT THEO PHƯƠNG THỨC:
+                  - NẾU LÀ CHUYỂN KHOẢN -> SHOW RA MÃ QR
+                  - NẾU LÀ TIỀN MẶT -> TUYỆT ĐỐI KHÔNG SHOW RA MÃ QR */}
+              {subPaymentMethod === 'TRANSFER' ? (
+                /* CHUYỂN KHOẢN: SHOW RA MÃ QR */
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-50/70 via-orange-50/40 to-stone-50 border-2 border-amber-200/80 space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-amber-200/60 flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <QrCode className="w-4 h-4 text-amber-800" />
+                      <span className="text-xs font-bold text-amber-950 uppercase tracking-wider">
+                        Mã QR Chuyển khoản ngân hàng (VietQR)
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                      Napas 247 • Tự động khớp số tiền
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-5 items-center sm:items-start">
+                    {/* Khối hiển thị ảnh mã QR */}
+                    <div className="bg-white p-3.5 rounded-2xl border-2 border-stone-200 shadow-sm flex flex-col items-center shrink-0">
+                      <div className="w-44 h-44 sm:w-48 sm:h-48 flex items-center justify-center overflow-hidden rounded-xl bg-white">
+                        {!qrImageError ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={vietQrImageUrl}
+                            alt="VietQR Chuyển khoản Coffee House"
+                            className="w-full h-full object-contain"
+                            onError={() => setQrImageError(true)}
+                          />
+                        ) : (
+                          <QRCodeSVG
+                            value={qrFallbackValue}
+                            size={176}
+                            level="M"
+                            className="w-full h-full"
+                          />
+                        )}
+                      </div>
+                      <span className="text-[10px] font-bold text-stone-500 mt-2 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-amber-600" />
+                        Quét bằng App Ngân hàng bất kỳ
+                      </span>
+                    </div>
+
+                    {/* Chi tiết tài khoản ngân hàng và sao chép */}
+                    <div className="flex-1 w-full space-y-2.5 text-xs">
+                      <div className="bg-white/95 p-3 rounded-xl border border-stone-200 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-stone-500 text-[11px]">Ngân hàng:</span>
+                          <strong className="text-stone-900 font-bold">{BANK_INFO.bankName}</strong>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-stone-500 text-[11px]">Chủ tài khoản:</span>
+                          <strong className="text-stone-900 font-bold">{BANK_INFO.accountName}</strong>
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-stone-100">
+                          <span className="text-stone-500 text-[11px]">Số tài khoản:</span>
+                          <div className="flex items-center gap-1.5">
+                            <strong className="text-stone-900 font-black text-sm tracking-wider font-mono">
+                              {BANK_INFO.accountNumber}
+                            </strong>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(BANK_INFO.accountNumber, 'Số tài khoản')}
+                              className="px-2 py-0.5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                              title="Sao chép STK"
+                            >
+                              {copiedField === 'Số tài khoản' ? (
+                                <Check className="w-3 h-3 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                              <span>Sao chép</span>
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-stone-100">
+                          <span className="text-stone-500 text-[11px]">Số tiền cần thanh toán:</span>
+                          <div className="flex items-center gap-1.5">
+                            <strong className="text-[#B26A3B] font-black text-sm">
+                              {formatCurrency(total)}
+                            </strong>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(total.toString(), 'Số tiền')}
+                              className="px-2 py-0.5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                              title="Sao chép số tiền"
+                            >
+                              {copiedField === 'Số tiền' ? (
+                                <Check className="w-3 h-3 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                              <span>Sao chép</span>
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-stone-100">
+                          <span className="text-stone-500 text-[11px]">Nội dung chuyển khoản:</span>
+                          <div className="flex items-center gap-1.5">
+                            <strong className="text-amber-900 font-mono font-bold">
+                              {transferMemo}
+                            </strong>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(transferMemo, 'Nội dung chuyển khoản')}
+                              className="px-2 py-0.5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                              title="Sao chép nội dung"
+                            >
+                              {copiedField === 'Nội dung chuyển khoản' ? (
+                                <Check className="w-3 h-3 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                              <span>Sao chép</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-amber-100/70 border border-amber-200/80 text-[11px] text-amber-950 flex items-start gap-2">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
+                        <span>
+                          Sau khi chuyển khoản thành công, quý khách vui lòng <strong>đưa màn hình giao dịch cho nhân viên quán xác nhận</strong> để hệ thống mở khóa gửi đơn đến Barista.
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* TIỀN MẶT: TUYỆT ĐỐI KHÔNG SHOW RA MÃ QR */
+                <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/50 border-2 border-stone-200 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                      <Banknote className="w-5 h-5" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="font-bold text-xs sm:text-sm text-[#231709]">
+                        Thanh toán Tiền mặt trực tiếp (Không có mã QR)
+                      </h3>
+                      <p className="text-xs text-stone-600 leading-relaxed">
+                        Quý khách vui lòng chuẩn bị số tiền <strong>{formatCurrency(total)}</strong>. Nhân viên phục vụ sẽ đến bàn {selectedTable ? <strong>{selectedTable.name}</strong> : 'của bạn'} để nhận tiền hoặc quý khách có thể gửi tiền tại quầy thu ngân.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-white border border-stone-200 text-xs text-stone-700 flex items-center justify-between">
+                    <span className="font-medium text-stone-600">Tổng tiền mặt cần chuẩn bị:</span>
+                    <strong className="text-base font-black text-[#B26A3B]">
+                      {formatCurrency(total)}
+                    </strong>
+                  </div>
+
+                  <p className="text-[11px] text-stone-500 italic">
+                    * Lưu ý: Hình thức tiền mặt không hiển thị mã QR. Nhân viên nhận tiền sẽ bấm xác nhận thanh toán để chuyển đơn sang Barista.
+                  </p>
+                </div>
+              )}
+
+              {/* KHU VỰC XÁC NHẬN THANH TOÁN TỪ NHÂN VIÊN (BẮT BUỘC) */}
+              <div className="pt-2 border-t border-stone-100">
+                {!isPaymentConfirmed ? (
+                  /* TRẠNG THÁI: CHƯA XÁC NHẬN THANH TOÁN (CHẶN GỬI ĐƠN) */
+                  <div className="p-4 rounded-2xl bg-amber-50/90 border-2 border-amber-300 space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-amber-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                          ⏳
+                        </div>
+                        <div>
+                          <strong className="text-xs font-bold text-amber-950 block">
+                            Trạng thái: CHƯA XÁC NHẬN THANH TOÁN
+                          </strong>
+                          <span className="text-[11px] text-amber-800">
+                            (Cần nhân viên xác nhận thành công mới được gửi đơn đến Barista)
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 border border-amber-300 shrink-0">
+                        Chờ nhân viên
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-white/90 border border-amber-200/80 text-xs text-amber-900 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                      <span>
+                        Chưa thanh toán thành công! Nút <strong>Gửi đơn hàng đến Barista</strong> hiện đang bị chặn.
+                      </span>
+                    </div>
+
+                    <div className="pt-1 flex flex-col sm:flex-row gap-2">
+                      <button
+                        type="button"
+                        onClick={handleOpenStaffModal}
+                        className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-700 to-[#B26A3B] hover:from-amber-800 hover:to-[#934F25] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+                      >
+                        <UserCheck className="w-4 h-4" />
+                        <span>Dành cho Nhân viên: Bấm xác nhận đã thu tiền</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* TRẠNG THÁI: ĐÃ XÁC NHẬN THANH TOÁN THÀNH CÔNG (MỞ KHÓA GỬI ĐƠN) */
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-400 space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                          ✓
+                        </div>
+                        <div>
+                          <strong className="text-xs font-bold text-emerald-950 block">
+                            ĐÃ XÁC NHẬN THANH TOÁN THÀNH CÔNG!
+                          </strong>
+                          <span className="text-[11px] text-emerald-700 font-medium">
+                            Xác nhận lúc {staffConfirmedTime} ({staffConfirmedBy})
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-emerald-200 text-emerald-900 border border-emerald-300 flex items-center gap-1 shrink-0">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-700" />
+                        Đã thanh toán
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-white/90 border border-emerald-200 text-xs text-emerald-900 flex items-center justify-between flex-wrap gap-2">
+                      <span>
+                        Hình thức: <strong>{subPaymentMethod === 'CASH' ? 'Tiền mặt' : 'Chuyển khoản VietQR'}</strong> • Số tiền: <strong>{formatCurrency(total)}</strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleRevokePaymentConfirmation}
+                        className="text-[11px] text-stone-500 hover:text-red-600 underline cursor-pointer"
+                      >
+                        Hủy xác nhận
+                      </button>
+                    </div>
+
+                    <p className="text-[11px] text-emerald-800 font-semibold flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>Đã đủ điều kiện! Nút <strong>Gửi đơn hàng đến Barista</strong> đã được mở khóa.</span>
                     </p>
                   </div>
-                </label>
+                )}
               </div>
             </div>
 
@@ -808,8 +1208,8 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {/* Cảnh báo chặn thanh toán */}
-              {(!selectedTable || isSelectedTableFull || selectedRemaining <= 0) && (
+              {/* Cảnh báo chặn thanh toán & gửi đơn */}
+              {(!selectedTable || isSelectedTableFull || selectedRemaining <= 0) ? (
                 <div className="p-3.5 rounded-2xl bg-red-100 border-2 border-red-400 text-xs text-red-950 font-bold space-y-1">
                   <div className="flex items-center gap-2 text-red-700 font-black">
                     <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
@@ -821,16 +1221,46 @@ export default function CheckoutPage() {
                       : 'Bạn chưa chọn bàn phục vụ còn chỗ trống. Vui lòng bấm chọn một bàn còn chỗ trống bên dưới để gọi món.'}
                   </p>
                 </div>
+              ) : !isPaymentConfirmed ? (
+                <div className="p-3.5 rounded-2xl bg-amber-50 border-2 border-amber-300 text-xs text-amber-950 font-bold space-y-2">
+                  <div className="flex items-center gap-1.5 text-amber-800 font-black">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                    <span>CHẶN GỬI ĐƠN ĐẾN BARISTA:</span>
+                  </div>
+                  <p className="font-medium text-stone-700 leading-relaxed">
+                    Chưa thanh toán thành công! Vui lòng nhờ nhân viên quán xác nhận đã thu <strong>{subPaymentMethod === 'CASH' ? 'tiền mặt' : 'tiền chuyển khoản'}</strong> ({formatCurrency(total)}) để mở khóa gửi đơn đến quầy Barista.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleOpenStaffModal}
+                    className="w-full mt-1 py-2 px-3 rounded-xl bg-amber-700 hover:bg-amber-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    Nhân viên: Bấm xác nhận thu tiền ngay
+                  </button>
+                </div>
+              ) : (
+                <div className="p-3 rounded-2xl bg-emerald-50 border-2 border-emerald-300 text-xs text-emerald-950 font-bold flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <div>
+                    <span className="block text-emerald-900 font-black">✅ ĐÃ XÁC NHẬN THANH TOÁN THÀNH CÔNG!</span>
+                    <span className="text-[11px] text-emerald-700 font-medium">
+                      Hình thức: {subPaymentMethod === 'CASH' ? 'Tiền mặt' : 'Chuyển khoản VietQR'} • Đã mở khóa gửi đơn sang Barista
+                    </span>
+                  </div>
+                </div>
               )}
 
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={isSubmitting || !selectedTable || isSelectedTableFull || selectedRemaining <= 0}
+                disabled={isSubmitting || !selectedTable || isSelectedTableFull || selectedRemaining <= 0 || !isPaymentConfirmed}
                 className={`w-full h-13 rounded-2xl font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg transition-all ${
                   !selectedTable || isSelectedTableFull || selectedRemaining <= 0
                     ? 'bg-stone-300 text-stone-500 cursor-not-allowed shadow-none border border-stone-300'
-                    : 'bg-gradient-to-r from-[#654321] to-[#B26A3B] text-white shadow-amber-950/20 hover:opacity-95 active:scale-98'
+                    : !isPaymentConfirmed
+                    ? 'bg-stone-200 text-stone-500 border-2 border-dashed border-stone-400 cursor-not-allowed shadow-none'
+                    : 'bg-gradient-to-r from-[#654321] to-[#B26A3B] text-white shadow-amber-950/20 hover:opacity-95 active:scale-98 cursor-pointer ring-2 ring-emerald-400'
                 }`}
               >
                 {isSubmitting ? (
@@ -842,6 +1272,8 @@ export default function CheckoutPage() {
                   'VUI LÒNG CHỌN BÀN CÒN TRỐNG 📍'
                 ) : isSelectedTableFull || selectedRemaining <= 0 ? (
                   '⛔ BÀN ĐÃ KÍN CHỖ - CHẶN THANH TOÁN'
+                ) : !isPaymentConfirmed ? (
+                  '⛔ CHỜ NHÂN VIÊN XÁC NHẬN THANH TOÁN'
                 ) : (
                   'GỬI ĐƠN HÀNG ĐẾN BARISTA ☕'
                 )}
@@ -855,6 +1287,114 @@ export default function CheckoutPage() {
           </div>
         </div>
       </main>
+
+      {/* Staff Confirmation Modal */}
+      {isStaffModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-stone-200 max-w-md w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
+                  <UserCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-[#231709]">
+                    Nhân viên xác nhận thanh toán
+                  </h3>
+                  <span className="text-[11px] text-stone-400">Xác thực thu tiền trước khi làm món</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsStaffModalOpen(false)}
+                className="w-8 h-8 rounded-xl hover:bg-stone-100 text-stone-400 hover:text-stone-700 flex items-center justify-center cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Thông tin đơn cần thu */}
+            <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-stone-500">Vị trí bàn:</span>
+                <strong className="text-stone-900">{selectedTable?.name || 'Chưa chọn bàn'}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500">Khách hàng:</span>
+                <strong className="text-stone-900">
+                  {customerName || 'Khách tại bàn'} {customerPhone ? `(${customerPhone})` : ''}
+                </strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500">Hình thức thanh toán:</span>
+                <strong className="text-stone-900">
+                  {subPaymentMethod === 'CASH' ? '💵 Tiền mặt' : '📲 Chuyển khoản VietQR'}
+                </strong>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-stone-200 text-sm">
+                <span className="font-bold text-stone-700">Tổng tiền thu:</span>
+                <strong className="text-base font-black text-[#B26A3B]">
+                  {formatCurrency(total)}
+                </strong>
+              </div>
+            </div>
+
+            {/* Nhập mã PIN nhân viên (tùy chọn) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-stone-700 flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Mã PIN nhân viên</span>
+                </label>
+                <span className="text-[11px] text-stone-400">(Mặc định: 1234)</span>
+              </div>
+              <input
+                type="password"
+                maxLength={6}
+                value={staffPin}
+                onChange={(e) => {
+                  setStaffPin(e.target.value)
+                  setStaffPinError('')
+                }}
+                placeholder="Nhập 1234"
+                className="w-full px-4 py-2.5 rounded-xl border-2 border-stone-200 text-center font-mono tracking-widest text-base focus:outline-none focus:border-[#B26A3B]"
+                autoFocus
+              />
+              {staffPinError && (
+                <p className="text-xs text-red-500 font-medium">{staffPinError}</p>
+              )}
+            </div>
+
+            {/* Nút hành động */}
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                onClick={() => handleStaffConfirm(false)}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Xác nhận đã thu đủ tiền ({formatCurrency(total)})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleStaffConfirm(true)}
+                className="w-full py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-xs transition-colors cursor-pointer"
+              >
+                Xác nhận nhanh (Bỏ qua nhập mã PIN)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsStaffModalOpen(false)}
+                className="w-full py-2 text-stone-400 hover:text-stone-600 text-xs font-medium cursor-pointer"
+              >
+                Đóng / Chưa thu tiền
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Footer />
     </div>
