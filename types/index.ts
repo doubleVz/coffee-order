@@ -52,12 +52,20 @@ export interface ProductOptionValue {
   sort_order: number
 }
 
+export type TableStatus = 'AVAILABLE' | 'OCCUPIED' | 'PARTIAL'
+
 export interface Table {
   id: string
   name: string
   code: string
-  capacity: number
+  capacity: number // Tổng số chỗ ngồi của bàn
+  occupied_seats?: number // Số lượng chỗ đã được lấp đầy (0 <= occupied_seats <= capacity)
   is_active: boolean
+  status?: TableStatus
+  occupied_at?: string | null
+  current_customer?: string | null
+  customers?: string[] // Danh sách các khách hàng đã order/ngồi vào bàn này
+  area?: string
   created_at: string
   updated_at: string
 }

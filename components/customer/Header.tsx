@@ -17,6 +17,7 @@ export function Header() {
   const navLinks = [
     { name: 'Trang chủ', href: '/' },
     { name: 'Thực đơn', href: '/menu' },
+    { name: 'Check bàn', href: '/check-ban' },
     { name: 'Về chúng tôi', href: '/#about' },
     { name: 'Liên hệ', href: '/#contact' },
   ]

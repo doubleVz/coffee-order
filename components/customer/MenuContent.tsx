@@ -8,7 +8,9 @@ import { ProductDetailModal } from '@/components/customer/ProductDetailModal'
 import { TableBanner } from '@/components/customer/TableBanner'
 import type { Product, Category, ProductOption } from '@/types'
 import { useCartStore } from '@/lib/store/cart-store'
+import { useTableStore } from '@/lib/store/table-store'
 import { MOCK_CATEGORIES, MOCK_PRODUCTS, MOCK_OPTIONS_FOR_DRINKS } from '@/lib/data/mock-data'
+import toast from 'react-hot-toast'
 
 const categoryIcons: Record<string, React.ReactNode> = {
   'ca-phe': <Coffee className="h-4 w-4" />,
@@ -63,20 +65,45 @@ export function MenuContent() {
         setProducts(loadedProds)
 
         if (tableId) {
-          try {
-            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId)
-            let tQuery = supabase.from('tables').select('*').eq('is_active', true)
-            if (isUuid) {
-              tQuery = tQuery.eq('id', tableId)
+          const storeTables = useTableStore.getState().tables
+          const matched = storeTables.find(
+            (t) =>
+              t.id.toLowerCase() === tableId.toLowerCase() ||
+              t.code.toLowerCase() === tableId.toLowerCase() ||
+              t.name.toLowerCase().includes(tableId.toLowerCase())
+          )
+
+          if (matched) {
+            const occ = typeof matched.occupied_seats === 'number' ? matched.occupied_seats : 0
+            if (occ >= matched.capacity) {
+              toast.error(`⛔ ${matched.name} hiện đã kín chỗ (${occ}/${matched.capacity})! Không thể chọn bàn này.`, {
+                icon: '⛔',
+                duration: 4000,
+              })
             } else {
-              tQuery = tQuery.or(`code.ilike.%${tableId}%,name.ilike.%${tableId}%`)
+              setTable(matched.id, matched.name)
             }
-            const { data: table } = await tQuery.maybeSingle()
-            if (table) {
-              setTable(table.id, table.name)
+          } else {
+            try {
+              const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId)
+              let tQuery = supabase.from('tables').select('*').eq('is_active', true)
+              if (isUuid) {
+                tQuery = tQuery.eq('id', tableId)
+              } else {
+                tQuery = tQuery.or(`code.ilike.%${tableId}%,name.ilike.%${tableId}%`)
+              }
+              const { data: table } = await tQuery.maybeSingle()
+              if (table) {
+                const occ = typeof table.occupied_seats === 'number' ? table.occupied_seats : 0
+                if (occ >= table.capacity) {
+                  toast.error(`⛔ ${table.name} hiện đã kín chỗ! Không thể chọn bàn này.`, { icon: '⛔' })
+                } else {
+                  setTable(table.id, table.name)
+                }
+              }
+            } catch {
+              setTable(tableId, `Bàn ${tableId}`)
             }
-          } catch {
-            setTable(tableId, `Bàn ${tableId}`)
           }
         }
       } catch (err) {

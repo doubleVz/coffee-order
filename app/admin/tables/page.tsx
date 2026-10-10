@@ -14,14 +14,16 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { Plus, Pencil, Trash2, QrCode, Printer, TableProperties, Loader2 } from 'lucide-react'
+import Link from 'next/link'
+import { Plus, Pencil, Trash2, QrCode, Printer, TableProperties, Loader2, Armchair } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import type { Table } from '@/types'
+import { MOCK_TABLES } from '@/lib/data/mock-data'
 import toast from 'react-hot-toast'
 
 export default function AdminTablesPage() {
-  const [tables, setTables] = useState<Table[]>([])
-  const [loading, setLoading] = useState(true)
+  const [tables, setTables] = useState<Table[]>(MOCK_TABLES)
+  const [loading, setLoading] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editTable, setEditTable] = useState<Table | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -151,12 +153,25 @@ export default function AdminTablesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-[#3B2416]">Quản lý bàn</h1>
-        <Button onClick={openCreate} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Thêm bàn
-        </Button>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-[#3B2416]">Quản lý bàn</h1>
+          <p className="text-xs text-gray-500 mt-0.5">Danh sách các bàn và mã QR gọi món tại bàn</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/check-ban"
+            target="_blank"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 text-xs font-bold hover:bg-amber-100 transition-colors shadow-xs"
+          >
+            <Armchair className="h-4 w-4 text-amber-700" />
+            Xem Check bàn Live 🟢
+          </Link>
+          <Button onClick={openCreate} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Thêm bàn
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
