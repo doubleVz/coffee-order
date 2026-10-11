@@ -370,6 +370,7 @@ export default function CheckoutPage() {
       }
 
       clearCart()
+      clearTable()
       toast.success('Đã gửi đơn hàng đến quầy Barista!')
       router.push(`/order-success?id=${orderResult.id}&code=${orderResult.order_code}&paid=true&method=${subPaymentMethod}`)
     } catch (err) {

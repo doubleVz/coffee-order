@@ -4,7 +4,7 @@ import { Header } from '@/components/customer/Header'
 import { Footer } from '@/components/customer/Footer'
 import { useCartStore } from '@/lib/store/cart-store'
 import { formatCurrency } from '@/lib/utils'
-import { Minus, Plus, Trash2, ShoppingBag, ArrowLeft, ArrowRight, MapPin, Sparkles } from 'lucide-react'
+import { Minus, Plus, Trash2, ShoppingBag, ArrowLeft, ArrowRight, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 
@@ -13,7 +13,6 @@ export default function CartPage() {
   const updateQuantity = useCartStore((s) => s.updateQuantity)
   const removeItem = useCartStore((s) => s.removeItem)
   const getTotal = useCartStore((s) => s.getTotal)
-  const tableName = useCartStore((s) => s.tableName)
 
   const total = getTotal()
 
@@ -31,16 +30,10 @@ export default function CartPage() {
           Tiếp tục chọn thêm món
         </Link>
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+        <div className="mb-6">
           <h1 className="text-2xl sm:text-3xl font-black text-[#231709] tracking-tight">
             Giỏ hàng của bạn
           </h1>
-          {tableName && (
-            <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-200/80 rounded-2xl px-3.5 py-1.5 text-xs font-semibold text-amber-900 shadow-xs">
-              <MapPin className="h-4 w-4 text-amber-700" />
-              <span>Đang gọi món tại <strong className="text-amber-800">{tableName}</strong></span>
-            </div>
-          )}
         </div>
 
         {items.length === 0 ? (

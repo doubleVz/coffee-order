@@ -59,7 +59,7 @@ export const useCartStore = create<CartState>()(
         }))
       },
 
-      clearCart: () => set({ items: [] }),
+      clearCart: () => set({ items: [], tableId: null, tableName: null }),
 
       setTable: (id, name) => set({ tableId: id, tableName: name }),
 
