@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, X, ShoppingCart, Coffee, MapPin, ChevronRight } from 'lucide-react'
+import { Menu, X, ShoppingCart, Coffee, ChevronRight } from 'lucide-react'
 import { useCartStore } from '@/lib/store/cart-store'
 import { formatCurrency } from '@/lib/utils'
 
@@ -12,7 +12,6 @@ export function Header() {
   const pathname = usePathname()
   const itemCount = useCartStore((state) => state.getItemCount())
   const total = useCartStore((state) => state.getTotal())
-  const tableName = useCartStore((state) => state.tableName)
 
   const navLinks = [
     { name: 'Trang chủ', href: '/' },
@@ -61,10 +60,13 @@ export function Header() {
             })}
           </nav>
 
-          {/* Actions: Table Badge & Cart & Mobile Toggle */}
+          {/* Actions: Cart & Mobile Toggle */}
           <div className="flex items-center gap-3">
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> fa0fde3ec343581a76ef995a999afbbf993d7ea0
             {/* Cart Button */}
             <Link
               href="/cart"
@@ -98,13 +100,6 @@ export function Header() {
         {/* Mobile Dropdown Nav */}
         {isMenuOpen && (
           <div className="md:hidden py-4 border-t border-amber-950/10 space-y-2 animate-in fade-in slide-in-from-top duration-200">
-            {tableName && (
-              <div className="flex items-center gap-2 p-3 bg-amber-50 rounded-2xl text-xs font-semibold text-amber-900 mb-2">
-                <MapPin className="h-4 w-4 text-amber-700" />
-                <span>Bạn đang đặt hàng tại: <strong>{tableName}</strong></span>
-              </div>
-            )}
-
             {navLinks.map((link) => (
               <Link
                 key={link.name}
