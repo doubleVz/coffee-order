@@ -2,7 +2,7 @@
 
 export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED'
 
-export type PaymentMethod = 'CASH' | 'COUNTER'
+export type PaymentMethod = 'CASH' | 'COUNTER' | 'MOMO' | 'VNPAY' | 'BANKING'
 
 export interface Category {
   id: string
@@ -79,12 +79,13 @@ export interface Order {
   note: string | null
   subtotal: number
   total: number
-  payment_method: PaymentMethod
+  payment_method: PaymentMethod | string
   status: OrderStatus
   created_at: string
   updated_at: string
   table?: Table
   order_items?: OrderItem[]
+  items?: OrderItem[]
 }
 
 export interface OrderItem {

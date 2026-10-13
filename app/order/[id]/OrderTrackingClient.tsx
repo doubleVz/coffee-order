@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDateTime, getStatusLabel, getStatusColor } from '@/lib/utils'
 import { Coffee, CheckCircle2, XCircle, ArrowLeft, MapPin, Receipt } from 'lucide-react'
 import Link from 'next/link'
+import { useOrderStore } from '@/lib/store/order-store'
 import type { Order, OrderItem } from '@/types'
 
 const STATUS_STEPS = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'COMPLETED'] as const
@@ -20,11 +21,35 @@ const STATUS_DESCRIPTIONS: Record<string, string> = {
 }
 
 export function OrderTrackingClient({ orderId }: { orderId: string }) {
+  const storeOrders = useOrderStore((state) => state.orders)
+  const storeOrder = storeOrders.find((o) => o.id === orderId || o.order_code === orderId)
+
   const [order, setOrder] = useState<Order | null>(null)
   const [orderItems, setOrderItems] = useState<OrderItem[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (storeOrder) {
+      setOrder(storeOrder)
+      const items = storeOrder.items || storeOrder.order_items || []
+      if (items.length > 0) {
+        setOrderItems(items)
+      }
+      setLoading(false)
+    }
+  }, [storeOrder])
+
+  useEffect(() => {
+    if (storeOrder) {
+      setOrder(storeOrder)
+      const items = storeOrder.items || storeOrder.order_items || []
+      if (items.length > 0) {
+        setOrderItems(items)
+      }
+      setLoading(false)
+      return
+    }
+
     async function fetchOrder() {
       try {
         const supabase = createClient()

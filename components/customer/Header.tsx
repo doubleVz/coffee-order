@@ -18,6 +18,7 @@ export function Header() {
     { name: 'Trang chủ', href: '/' },
     { name: 'Thực đơn', href: '/menu' },
     { name: 'Check bàn', href: '/check-ban' },
+    { name: 'Barista 🔒', href: '/barista' },
     { name: 'Về chúng tôi', href: '/#about' },
     { name: 'Liên hệ', href: '/#contact' },
   ]
@@ -49,11 +50,10 @@ export function Header() {
                 <Link
                   key={link.name}
                   href={link.href}
-                  className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${
-                    isActive
-                      ? 'bg-white text-[#654321] shadow-xs'
-                      : 'text-stone-600 hover:text-[#231709] hover:bg-white/50'
-                  }`}
+                  className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${isActive
+                    ? 'bg-white text-[#654321] shadow-xs'
+                    : 'text-stone-600 hover:text-[#231709] hover:bg-white/50'
+                    }`}
                 >
                   {link.name}
                 </Link>
@@ -63,13 +63,7 @@ export function Header() {
 
           {/* Actions: Table Badge & Cart & Mobile Toggle */}
           <div className="flex items-center gap-3">
-            {/* Table badge if seated */}
-            {tableName && (
-              <div className="hidden sm:flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-full text-xs font-semibold text-amber-900">
-                <MapPin className="h-3.5 w-3.5 text-amber-700" />
-                <span>{tableName}</span>
-              </div>
-            )}
+
 
             {/* Cart Button */}
             <Link

@@ -11,7 +11,8 @@ import {
   CheckCircle, ChefHat, HandPlatter, CircleCheck, XCircle,
   ClipboardList
 } from 'lucide-react'
-import type { Order } from '@/types'
+import type { Order, OrderStatus } from '@/types'
+import { useOrderStore } from '@/lib/store/order-store'
 import toast from 'react-hot-toast'
 
 const STATUS_FILTERS = [
@@ -25,92 +26,76 @@ const STATUS_FILTERS = [
 ]
 
 export default function AdminOrdersPage() {
-  const [orders, setOrders] = useState<Order[]>([])
-  const [loading, setLoading] = useState(true)
+  const storeOrders = useOrderStore((s) => s.orders)
+  const updateStatusInStore = useOrderStore((s) => s.updateOrderStatus)
+  const syncFromStorage = useOrderStore((s) => s.syncOrdersFromStorage)
+
+  const [loading, setLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(() => {
+    syncFromStorage()
+    toast.success('Đã làm mới danh sách đơn hàng')
+  }, [syncFromStorage])
+
+  useEffect(() => {
+    syncFromStorage()
+  }, [syncFromStorage])
+
+  // Lọc danh sách đơn hàng từ store dùng chung
+  const orders = storeOrders.filter((order) => {
+    if (statusFilter !== 'all' && order.status !== statusFilter) return false
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      const matchesCode = order.order_code.toLowerCase().includes(q)
+      const matchesCustomer = (order.customer_name || '').toLowerCase().includes(q)
+      const matchesPhone = (order.customer_phone || '').toLowerCase().includes(q)
+      return matchesCode || matchesCustomer || matchesPhone
+    }
+    return true
+  })
+
+  // Realtime subscription (Supabase fallback)
+  useEffect(() => {
     try {
-      const params = new URLSearchParams()
-      if (statusFilter !== 'all') params.set('status', statusFilter)
-      if (searchQuery) params.set('search', searchQuery)
+      const supabase = createClient()
+      const channel = supabase
+        .channel('admin-orders')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'orders' },
+          () => {
+            fetchOrders()
+            try {
+              if (audioRef.current) {
+                audioRef.current.play().catch(() => {})
+              }
+            } catch {}
+          }
+        )
+        .subscribe()
 
-      const res = await fetch(`/api/orders?${params.toString()}`)
-      const data = await res.json()
-      setOrders((data.orders || []) as Order[])
-    } catch {
-      toast.error('Không thể tải đơn hàng')
-    } finally {
-      setLoading(false)
-    }
-  }, [statusFilter, searchQuery])
-
-  useEffect(() => {
-    let ignore = false
-    const load = async () => {
-      try {
-        const params = new URLSearchParams()
-        if (statusFilter !== 'all') params.set('status', statusFilter)
-        if (searchQuery) params.set('search', searchQuery)
-
-        const res = await fetch(`/api/orders?${params.toString()}`)
-        const data = await res.json()
-        if (!ignore) {
-          setOrders((data.orders || []) as Order[])
-        }
-      } catch {
-        if (!ignore) toast.error('Không thể tải đơn hàng')
-      } finally {
-        if (!ignore) setLoading(false)
+      return () => {
+        supabase.removeChannel(channel)
       }
-    }
-    void load()
-    return () => {
-      ignore = true
-    }
-  }, [statusFilter, searchQuery])
-
-  // Realtime subscription
-  useEffect(() => {
-    const supabase = createClient()
-    const channel = supabase
-      .channel('admin-orders')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
-        () => {
-          fetchOrders()
-          // Play notification sound for new orders
-          try {
-            if (audioRef.current) {
-              audioRef.current.play().catch(() => {})
-            }
-          } catch {}
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
+    } catch {
+      // ignore
     }
   }, [fetchOrders])
 
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
+    updateStatusInStore(orderId, newStatus as OrderStatus)
+    toast.success(`Đã chuyển trạng thái: ${getStatusLabel(newStatus)}`)
     try {
-      const res = await fetch(`/api/orders/${orderId}`, {
+      await fetch(`/api/orders/${orderId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       })
-
-      if (!res.ok) throw new Error()
-
-      toast.success(`Đã chuyển trạng thái: ${getStatusLabel(newStatus)}`)
-      fetchOrders()
     } catch {
-      toast.error('Không thể cập nhật trạng thái')
+      // ignore
     }
   }
 
@@ -214,7 +199,7 @@ export default function AdminOrdersPage() {
                     <p>{order.customer_name} • {order.customer_phone}</p>
                   </div>
                   <div className="mt-2 space-y-1">
-                    {order.order_items?.map((item) => (
+                    {(order.items || order.order_items)?.map((item) => (
                       <p key={item.id} className="text-sm text-gray-500">
                         {item.product_name} x{item.quantity}
                         {item.options_text && <span className="text-xs text-gray-400"> ({item.options_text})</span>}

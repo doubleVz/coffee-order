@@ -29,11 +29,7 @@ export function CartFloatingButton() {
           <div>
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-sm text-white">Giỏ hàng của bạn</span>
-              {tableName && (
-                <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-medium">
-                  {tableName}
-                </span>
-              )}
+
             </div>
             <p className="text-xs text-stone-300">
               {getItemCount()} món • Nhấn để xem lại

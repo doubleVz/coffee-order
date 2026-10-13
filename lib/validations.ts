@@ -7,7 +7,7 @@ export const checkoutSchema = z.object({
     .min(1, 'Vui lòng nhập số điện thoại')
     .regex(/^(0[3|5|7|8|9])[0-9]{8}$/, 'Số điện thoại không hợp lệ'),
   note: z.string().max(500, 'Ghi chú quá dài').optional().default(''),
-  paymentMethod: z.enum(['CASH', 'COUNTER']),
+  paymentMethod: z.enum(['CASH', 'BANKING', 'COUNTER', 'MOMO']),
 })
 
 export const productSchema = z.object({

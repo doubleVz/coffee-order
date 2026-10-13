@@ -6,6 +6,8 @@ import { Header } from '@/components/customer/Header'
 import { Footer } from '@/components/customer/Footer'
 import { useTableStore } from '@/lib/store/table-store'
 import { useCartStore } from '@/lib/store/cart-store'
+import { useOrderStore } from '@/lib/store/order-store'
+import { formatCurrency } from '@/lib/utils'
 import {
   Users,
   CheckCircle2,
@@ -27,9 +29,14 @@ import {
   LayoutGrid,
   Plus,
   Minus,
+  ClipboardList,
+  Receipt,
+  User,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import type { Table, TableStatus } from '@/types'
+import type { Table, TableStatus, Order, OrderItem } from '@/types'
+
+const getOrderItems = (order: Order): OrderItem[] => order.items || order.order_items || []
 
 function getTimeElapsed(occupiedAt: string | null | undefined): string {
   if (!occupiedAt) return 'Vừa vào'
@@ -51,9 +58,17 @@ export default function CheckBanPage() {
   const resetAllToDefault = useTableStore((s) => s.resetAllToDefault)
   const setTableInCart = useCartStore((s) => s.setTable)
 
+  // Danh sách đơn hàng từ store dùng chung, đồng bộ thời gian thực với Barista
+  const orders = useOrderStore((s) => s.orders)
+  const syncOrdersFromStorage = useOrderStore((s) => s.syncOrdersFromStorage)
+
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'AVAILABLE' | 'PARTIAL' | 'OCCUPIED'>('ALL')
   const [areaFilter, setAreaFilter] = useState<string>('ALL')
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Bộ lọc cho danh sách đơn hàng bên dưới
+  const [orderStatusFilter, setOrderStatusFilter] = useState<'ALL' | 'BREWING' | 'COMPLETED'>('ALL')
+  const [orderSearchQuery, setOrderSearchQuery] = useState('')
 
   // Tick for elapsed time calculation
   const [, setTick] = useState(0)
@@ -61,6 +76,54 @@ export default function CheckBanPage() {
     const timer = setInterval(() => setTick((t) => t + 1), 60000)
     return () => clearInterval(timer)
   }, [])
+
+  // Tự động đồng bộ liên tục với Barista (BroadcastChannel & localStorage)
+  useEffect(() => {
+    syncOrdersFromStorage()
+    const syncInterval = setInterval(() => {
+      syncOrdersFromStorage()
+    }, 1000)
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'coffee-orders-store' || e.key === 'coffee-orders-last-update') {
+        syncOrdersFromStorage()
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+
+    return () => {
+      clearInterval(syncInterval)
+      window.removeEventListener('storage', handleStorage)
+    }
+  }, [syncOrdersFromStorage])
+
+  // Thống kê số lượng đơn hàng theo 2 trạng thái Barista
+  const brewingOrdersCount = orders.filter(
+    (o) => o.status === 'PENDING' || o.status === 'CONFIRMED' || o.status === 'PREPARING'
+  ).length
+  const completedOrdersCount = orders.filter(
+    (o) => o.status === 'READY' || o.status === 'COMPLETED'
+  ).length
+
+  // Danh sách đơn hàng hiển thị sau khi lọc (Chỉ đọc)
+  const filteredOrdersList = orders.filter((order) => {
+    const isDone = order.status === 'COMPLETED' || order.status === 'READY'
+    const isBrewing = !isDone
+
+    if (orderStatusFilter === 'BREWING' && !isBrewing) return false
+    if (orderStatusFilter === 'COMPLETED' && !isDone) return false
+
+    if (orderSearchQuery.trim()) {
+      const q = orderSearchQuery.toLowerCase()
+      const matchesCode = order.order_code.toLowerCase().includes(q)
+      const matchesCustomer = (order.customer_name || '').toLowerCase().includes(q)
+      const matchesTable = (order.table?.name || '').toLowerCase().includes(q)
+      const items = getOrderItems(order)
+      const matchesItems = items.some((i) => i.product_name.toLowerCase().includes(q))
+      return matchesCode || matchesCustomer || matchesTable || matchesItems
+    }
+    return true
+  })
 
   // Calculate detailed statistics
   const totalTables = tables.length
@@ -531,6 +594,46 @@ export default function CheckBanPage() {
                               <span className="text-stone-600">{table.customers.join(', ')}</span>
                             </div>
                           )}
+
+                          {/* Trạng thái đơn của bàn này (Đồng bộ Barista - chỉ xem) */}
+                          {(() => {
+                            const tableOrders = orders.filter(
+                              (o) => o.table_id === table.id || o.table?.id === table.id
+                            )
+                            if (tableOrders.length === 0) return null
+                            return (
+                              <div className="pt-1.5 border-t border-black/5 space-y-1">
+                                <span className="font-bold text-stone-700 text-[10px] uppercase tracking-wide block">
+                                  Đơn của bàn ({tableOrders.length}):
+                                </span>
+                                {tableOrders.map((ord) => {
+                                  const isOrdDone = ord.status === 'COMPLETED' || ord.status === 'READY'
+                                  const isOrdPrep = ord.status === 'PREPARING'
+                                  return (
+                                    <div
+                                      key={ord.id}
+                                      className="flex items-center justify-between text-[11px] bg-white/90 px-2 py-1 rounded-lg border border-stone-200/60 shadow-2xs"
+                                    >
+                                      <span className="font-mono font-bold text-stone-800">
+                                        #{ord.order_code}
+                                      </span>
+                                      <span
+                                        className={`font-black ${
+                                          isOrdDone
+                                            ? 'text-emerald-700'
+                                            : isOrdPrep
+                                            ? 'text-orange-700'
+                                            : 'text-amber-700'
+                                        }`}
+                                      >
+                                        {isOrdDone ? 'Đã xong ✅' : isOrdPrep ? 'Đang pha ☕' : 'Bắt đầu pha'}
+                                      </span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )
+                          })()}
                         </div>
                       ) : (
                         <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 space-y-1">
@@ -618,6 +721,223 @@ export default function CheckBanPage() {
             })
           )}
         </div>
+
+        {/* ========================================================================= */}
+        {/* DANH SÁCH ĐƠN HÀNG VÀ TRẠNG THÁI PHA CHẾ (DẠNG LIST DỌC - ĐỒNG BỘ BARISTA) */}
+        {/* ========================================================================= */}
+        <section className="bg-white rounded-3xl border border-stone-200/80 p-5 sm:p-7 shadow-xs space-y-6">
+          {/* Header mục danh sách đơn hàng */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-stone-100">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-900 border border-amber-300/40 flex items-center justify-center font-bold shadow-xs shrink-0">
+                <ClipboardList className="w-6 h-6 text-amber-800" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl sm:text-2xl font-black text-[#231709] tracking-tight">
+                    Danh sách đơn hàng & Trạng thái pha chế
+                  </h2>
+                  <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Đồng bộ Barista
+                  </span>
+                </div>
+                <p className="text-xs text-stone-500 mt-0.5">
+                  Theo dõi tiến độ đơn hàng theo thời gian thực • Chế độ chỉ xem (không có nút thao tác)
+                </p>
+              </div>
+            </div>
+
+            {/* Thống kê đơn hàng nhanh */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="px-3.5 py-1.5 rounded-xl bg-stone-100 text-stone-700 text-xs font-bold border border-stone-200">
+                Tổng: <strong className="text-stone-900">{orders.length}</strong> đơn
+              </div>
+              <div className="px-3.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 text-xs font-bold border border-amber-200 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                Pha chế: <strong className="text-amber-900">{brewingOrdersCount}</strong>
+              </div>
+              <div className="px-3.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                Đã xong: <strong className="text-emerald-900">{completedOrdersCount}</strong>
+              </div>
+            </div>
+          </div>
+
+          {/* Bộ lọc đơn hàng & Ô tìm kiếm */}
+          <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+              <input
+                type="text"
+                value={orderSearchQuery}
+                onChange={(e) => setOrderSearchQuery(e.target.value)}
+                placeholder="Tìm theo mã đơn (CF...), số bàn, tên khách hoặc món nước..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-2xl border border-stone-200 text-xs sm:text-sm focus:outline-none focus:border-[#B26A3B] transition-colors"
+              />
+            </div>
+
+            {/* Tab lọc trạng thái đơn */}
+            <div className="flex items-center gap-1.5 p-1 bg-stone-100 rounded-2xl text-xs font-bold shrink-0 overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => setOrderStatusFilter('ALL')}
+                className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                  orderStatusFilter === 'ALL'
+                    ? 'bg-white text-[#231709] shadow-xs'
+                    : 'text-stone-500 hover:text-stone-900'
+                }`}
+              >
+                Tất cả ({orders.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrderStatusFilter('BREWING')}
+                className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1 cursor-pointer ${
+                  orderStatusFilter === 'BREWING'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'text-stone-500 hover:text-amber-700'
+                }`}
+              >
+                <Coffee className="w-3.5 h-3.5" />
+                Bắt đầu pha chế ({brewingOrdersCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrderStatusFilter('COMPLETED')}
+                className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1 cursor-pointer ${
+                  orderStatusFilter === 'COMPLETED'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-stone-500 hover:text-emerald-700'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Đã xong ({completedOrdersCount})
+              </button>
+            </div>
+          </div>
+
+          {/* DANH SÁCH DẠNG LIST DỌC (READ-ONLY, KHÔNG CÓ NÚT BẤM) */}
+          {filteredOrdersList.length === 0 ? (
+            <div className="py-12 text-center bg-stone-50 rounded-2xl border border-dashed border-stone-200 p-6">
+              <Coffee className="w-10 h-10 text-stone-300 mx-auto mb-2" />
+              <p className="text-sm font-bold text-stone-600">Không có đơn hàng nào</p>
+              <p className="text-xs text-stone-400 mt-0.5">
+                {orderSearchQuery
+                  ? 'Không tìm thấy đơn nào theo từ khóa tìm kiếm.'
+                  : 'Hiện chưa có đơn hàng nào trong danh mục này.'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3 flex flex-col">
+              {filteredOrdersList.map((order) => {
+                const isDone = order.status === 'COMPLETED' || order.status === 'READY'
+                const isPreparing = order.status === 'PREPARING'
+                const items = getOrderItems(order)
+
+                return (
+                  <div
+                    key={order.id}
+                    className={`p-4 sm:p-5 rounded-2xl border transition-all flex flex-col lg:flex-row lg:items-center justify-between gap-4 ${
+                      isDone
+                        ? 'bg-emerald-50/20 border-emerald-200/80 hover:bg-emerald-50/30'
+                        : isPreparing
+                        ? 'bg-orange-50/25 border-orange-200/90 ring-1 ring-orange-100 hover:bg-orange-50/40'
+                        : 'bg-amber-50/25 border-amber-200/90 hover:bg-amber-50/40'
+                    }`}
+                  >
+                    {/* Cột trái: Mã đơn, Bàn, Tên khách, Giờ đặt, Món nước */}
+                    <div className="space-y-2 flex-1">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <span className="font-mono text-sm sm:text-base font-black text-[#231709] tracking-tight">
+                          #{order.order_code}
+                        </span>
+
+                        {/* Vị trí bàn */}
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-100/90 text-amber-900 border border-amber-200 text-xs font-bold">
+                          <MapPin className="w-3 h-3 text-amber-700" />
+                          {order.table?.name || 'Tại quầy'}
+                        </span>
+
+                        {/* Tên khách */}
+                        {order.customer_name && (
+                          <span className="inline-flex items-center gap-1 text-xs text-stone-600 font-semibold">
+                            <span className="text-stone-300">•</span>
+                            {order.customer_name}
+                            {order.customer_phone && (
+                              <span className="text-stone-400 text-[11px]">({order.customer_phone})</span>
+                            )}
+                          </span>
+                        )}
+
+                        {/* Giờ tạo đơn */}
+                        <span className="inline-flex items-center gap-1 text-[11px] text-stone-400 font-medium">
+                          <Clock className="w-3 h-3" />
+                          {getTimeElapsed(order.created_at)}
+                        </span>
+                      </div>
+
+                      {/* Danh sách các món nước */}
+                      <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                        {items.map((it: OrderItem, idx: number) => (
+                          <span
+                            key={it.id || idx}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white border border-stone-200 text-xs text-stone-800 shadow-2xs font-medium"
+                          >
+                            <span className="font-bold text-amber-800">{it.quantity}×</span>
+                            <span className="font-semibold text-stone-900">{it.product_name}</span>
+                            {it.options_text && (
+                              <span className="text-[10px] text-stone-400">({it.options_text})</span>
+                            )}
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Ghi chú đơn nếu có */}
+                      {order.note && (
+                        <p className="text-[11px] text-amber-900/90 italic pt-0.5">
+                          ⚡ Ghi chú: {order.note}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Cột phải: TRẠNG THÁI BARISTA (CHỈ HIỂN THỊ THÔNG TIN, KHÔNG CÓ NÚT BẤM) & TỔNG TIỀN */}
+                    <div className="flex items-center lg:flex-col lg:items-end justify-between gap-2.5 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-stone-100">
+                      {/* Trạng thái Barista - Chỉ hiển thị badge tĩnh */}
+                      <div>
+                        {isDone ? (
+                          <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-black shadow-2xs select-none">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
+                            ĐÃ XONG ✅
+                          </span>
+                        ) : isPreparing ? (
+                          <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-orange-100 text-orange-900 border border-orange-300 text-xs font-black shadow-2xs select-none">
+                            <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+                            <Coffee className="w-3.5 h-3.5 text-orange-700" />
+                            ĐANG PHA CHẾ ☕
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-100 text-amber-900 border border-amber-300 text-xs font-black shadow-2xs select-none">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                            BẮT ĐẦU PHA CHẾ
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Tổng tiền */}
+                      <div className="text-right">
+                        <span className="text-[11px] text-stone-400 block font-medium">Tổng thanh toán</span>
+                        <span className="text-sm font-black text-amber-950">
+                          {formatCurrency(order.total)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
       </main>
 
       <Footer />

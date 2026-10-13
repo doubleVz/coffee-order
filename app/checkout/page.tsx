@@ -1,16 +1,38 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/customer/Header'
 import { Footer } from '@/components/customer/Footer'
 import { useCartStore } from '@/lib/store/cart-store'
 import { formatCurrency } from '@/lib/utils'
-import { ArrowLeft, Loader2, MapPin, User, Phone, FileText, CreditCard, Banknote, ShieldCheck, Armchair, Users, Sparkles, Plus, Minus, AlertTriangle } from 'lucide-react'
+import {
+  ArrowLeft,
+  Loader2,
+  MapPin,
+  User,
+  Phone,
+  FileText,
+  CreditCard,
+  Banknote,
+  ShieldCheck,
+  Armchair,
+  Users,
+  Sparkles,
+  Plus,
+  Minus,
+  AlertTriangle,
+  QrCode,
+  Copy,
+  CheckCircle2,
+  Check,
+} from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import { createClient } from '@/lib/supabase/client'
-import type { Table } from '@/types'
+import type { Table, Order } from '@/types'
 import { MOCK_TABLES } from '@/lib/data/mock-data'
 import { useTableStore } from '@/lib/store/table-store'
+import { useOrderStore } from '@/lib/store/order-store'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 
@@ -29,12 +51,28 @@ export default function CheckoutPage() {
   const addCustomerToTable = useTableStore((s) => s.addCustomerToTable)
   const occupyTable = useTableStore((s) => s.occupyTable)
   const switchTable = useTableStore((s) => s.switchTable)
+  const addOrderToStore = useOrderStore((s) => s.addOrder)
 
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [guestCount, setGuestCount] = useState(1)
   const [note, setNote] = useState('')
-  const [paymentMethod, setPaymentMethod] = useState<'COUNTER' | 'CASH'>('COUNTER')
+  const [paymentMethod, setPaymentMethod] = useState<'BANKING' | 'CASH'>('BANKING')
+  const [isPaymentConfirmed, setIsPaymentConfirmed] = useState(false)
+  const [qrImgError, setQrImgError] = useState(false)
+
+  // Cú pháp nội dung chuyển khoản tự động
+  const transferMemo = useMemo(() => {
+    const phonePart = customerPhone.replace(/\D/g, '').slice(-4) || '8888'
+    return `CF ${phonePart}`
+  }, [customerPhone])
+
+  const copyToClipboard = (text: string, label: string) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text)
+      toast.success(`Đã sao chép ${label}!`, { icon: '📋' })
+    }
+  }
 
   // Helper tìm bàn theo ID, mã bàn (B01..) hoặc tên
   const findTable = (idOrCode: string | null | undefined): Table | undefined => {
@@ -226,11 +264,29 @@ export default function CheckoutPage() {
       }
     }
 
+    // BẮT BUỘC THU NGÂN XÁC NHẬN ĐÃ THU TIỀN MỚI CHO GỬI ĐẾN BARISTA
+    if (!isPaymentConfirmed) {
+      errs.payment = 'Thu ngân chưa xác nhận đã thu tiền từ khách'
+      toast.error('⚠️ Thu ngân vui lòng kiểm tra và tích chọn xác nhận đã thu tiền trước khi gửi đơn đến Barista!', {
+        icon: '⚠️',
+        duration: 4500,
+      })
+    }
+
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
 
   const handleSubmit = async () => {
+    // CHẶN NẾU THU NGÂN CHƯA XÁC NHẬN ĐÃ THU TIỀN
+    if (!isPaymentConfirmed) {
+      toast.error('⚠️ Thu ngân vui lòng tích chọn xác nhận đã thu tiền trước khi gửi đơn đến Barista pha chế!', {
+        icon: '⚠️',
+        duration: 4500,
+      })
+      return
+    }
+
     // CHẶN THANH TOÁN NGAY LẬP TỨC NẾU CHƯA CÓ BÀN HOẶC BÀN ĐÃ KÍN
     if (!activeTableId || !selectedTable) {
       toast.error('CHẶN THANH TOÁN: Vui lòng chọn một bàn phục vụ còn chỗ trống!', { icon: '⛔' })
@@ -309,6 +365,73 @@ export default function CheckoutPage() {
           order_code: `CF${randomNum}`,
         }
       }
+
+      // Lưu đơn hàng vào order-store dùng chung theo thời gian thực cho Barista
+      const nowIso = new Date().toISOString()
+      const newOrderForStore: Order = {
+        id: orderResult.id,
+        order_code: orderResult.order_code,
+        table_id: selectedTable.id,
+        customer_name: customerName.trim() || 'Khách đặt món',
+        customer_phone: customerPhone.trim(),
+        note: note.trim() || null,
+        subtotal: total,
+        total: total,
+        payment_method: paymentMethod,
+        status: 'PENDING',
+        created_at: nowIso,
+        updated_at: nowIso,
+        table: {
+          id: selectedTable.id,
+          name: selectedTable.name,
+          code: selectedTable.code,
+          capacity: selectedTable.capacity,
+          is_active: true,
+          area: selectedTable.area,
+          created_at: '',
+          updated_at: '',
+        },
+        items: items.map((item, idx) => ({
+          id: `item-${Date.now()}-${idx}`,
+          order_id: orderResult!.id,
+          product_id: item.productId,
+          product_name: item.productName,
+          quantity: item.quantity,
+          unit_price: item.unitPrice,
+          subtotal: item.subtotal,
+          options: null,
+          options_text: [
+            item.size && `Size ${item.size}`,
+            item.sugar && `Đường ${item.sugar}`,
+            item.ice && `Đá ${item.ice}`,
+            ...(item.toppings || []).map((t) => t.name),
+          ]
+            .filter(Boolean)
+            .join(' • '),
+          note: item.note,
+        })),
+        order_items: items.map((item, idx) => ({
+          id: `item-${Date.now()}-${idx}`,
+          order_id: orderResult!.id,
+          product_id: item.productId,
+          product_name: item.productName,
+          quantity: item.quantity,
+          unit_price: item.unitPrice,
+          subtotal: item.subtotal,
+          options: null,
+          options_text: [
+            item.size && `Size ${item.size}`,
+            item.sugar && `Đường ${item.sugar}`,
+            item.ice && `Đá ${item.ice}`,
+            ...(item.toppings || []).map((t) => t.name),
+          ]
+            .filter(Boolean)
+            .join(' • '),
+          note: item.note,
+        })),
+      }
+
+      addOrderToStore(newOrderForStore)
 
       clearCart()
       toast.success('Đã gửi đơn hàng đến quầy Barista!')
@@ -686,62 +809,256 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            {/* Payment Method Card */}
-            <div className="bg-white rounded-3xl border border-stone-200/80 p-6 shadow-xs space-y-4">
-              <div className="flex items-center gap-2 pb-3 border-b border-stone-100">
-                <CreditCard className="w-4 h-4 text-amber-700" />
-                <h2 className="font-bold text-sm text-[#231709] uppercase tracking-wider">
-                  3. Hình thức thanh toán
-                </h2>
+            {/* Payment Method Card & QR Code */}
+            <div className="bg-white rounded-3xl border border-stone-200/80 p-6 shadow-xs space-y-5">
+              <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+                <div className="flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-amber-700" />
+                  <h2 className="font-bold text-sm text-[#231709] uppercase tracking-wider">
+                    3. Hình thức thanh toán (Thu ngân chọn)
+                  </h2>
+                </div>
+                <span className="text-[11px] font-bold text-amber-900 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-700" />
+                  Thu ngân xử lý tại quầy POS
+                </span>
               </div>
 
-              <div className="grid sm:grid-cols-2 gap-3">
-                <label
-                  className={`flex items-start gap-3 p-4 rounded-2xl border-2 cursor-pointer transition-all ${paymentMethod === 'COUNTER'
-                      ? 'border-[#B26A3B] bg-[#FFF8F0] shadow-xs'
+              {/* Payment Method Selector Options - CHỈ 2 PHƯƠNG THỨC: CHUYỂN KHOẢN VÀ TIỀN MẶT */}
+              <div className="grid sm:grid-cols-2 gap-3.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentMethod('BANKING')
+                    setIsPaymentConfirmed(false)
+                  }}
+                  className={`flex flex-col text-left p-4 rounded-2xl border-2 transition-all relative ${
+                    paymentMethod === 'BANKING'
+                      ? 'border-[#B26A3B] bg-[#FFF8F0] shadow-xs ring-2 ring-[#B26A3B]/30'
                       : 'border-stone-200/80 bg-white hover:border-amber-300'
-                    }`}
+                  }`}
                 >
-                  <input
-                    type="radio"
-                    name="payment"
-                    value="COUNTER"
-                    checked={paymentMethod === 'COUNTER'}
-                    onChange={() => setPaymentMethod('COUNTER')}
-                    className="accent-[#B26A3B] mt-1"
-                  />
-                  <div>
-                    <div className="flex items-center gap-1.5 font-bold text-xs sm:text-sm text-[#231709]">
-                      <Banknote className="w-4 h-4 text-amber-700" />
-                      <span>Thanh toán tại quầy</span>
-                    </div>
-                    <p className="text-[11px] text-stone-500 mt-1">
-                      Thanh toán khi nhân viên mang đồ ra bàn hoặc ghé quầy thu ngân.
-                    </p>
+                  <span className="absolute -top-2 right-2 px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-black uppercase">
+                    Quét VietQR 24/7
+                  </span>
+                  <div className="flex items-center gap-2 mb-1">
+                    <QrCode className="w-5 h-5 text-amber-800" />
+                    <span className="font-black text-sm text-[#231709]">1. Chuyển khoản (VietQR)</span>
                   </div>
-                </label>
+                  <p className="text-[11px] text-stone-500">
+                    Khách quét mã VietQR tự động qua ứng dụng ngân hàng
+                  </p>
+                </button>
 
-                <label
-                  className={`flex items-start gap-3 p-4 rounded-2xl border-2 cursor-pointer transition-all ${paymentMethod === 'CASH'
-                      ? 'border-[#B26A3B] bg-[#FFF8F0] shadow-xs'
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentMethod('CASH')
+                    setIsPaymentConfirmed(false)
+                  }}
+                  className={`flex flex-col text-left p-4 rounded-2xl border-2 transition-all relative ${
+                    paymentMethod === 'CASH'
+                      ? 'border-[#B26A3B] bg-[#FFF8F0] shadow-xs ring-2 ring-[#B26A3B]/30'
                       : 'border-stone-200/80 bg-white hover:border-amber-300'
-                    }`}
+                  }`}
                 >
-                  <input
-                    type="radio"
-                    name="payment"
-                    value="CASH"
-                    checked={paymentMethod === 'CASH'}
-                    onChange={() => setPaymentMethod('CASH')}
-                    className="accent-[#B26A3B] mt-1"
-                  />
-                  <div>
-                    <div className="flex items-center gap-1.5 font-bold text-xs sm:text-sm text-[#231709]">
-                      <CreditCard className="w-4 h-4 text-amber-700" />
-                      <span>Tiền mặt / Chuyển khoản</span>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Banknote className="w-5 h-5 text-emerald-700" />
+                    <span className="font-black text-sm text-[#231709]">2. Tiền mặt</span>
+                  </div>
+                  <p className="text-[11px] text-stone-500">
+                    Thu tiền mặt trực tiếp từ khách hàng tại quầy
+                  </p>
+                </button>
+              </div>
+
+              {/* Khối hiển thị chi tiết mã VietQR cho phương thức Chuyển khoản */}
+              {paymentMethod === 'BANKING' && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-50/80 via-white to-orange-50/60 border border-amber-300/80 shadow-xs space-y-4 animate-in fade-in duration-300">
+                  <div className="flex items-center justify-between pb-3 border-b border-amber-200/60">
+                    <div className="flex items-center gap-2">
+                      <QrCode className="w-5 h-5 text-[#B26A3B]" />
+                      <div>
+                        <h3 className="font-bold text-sm text-[#231709]">
+                          MÃ VIETQR CHUYỂN KHOẢN TỰ ĐỘNG
+                        </h3>
+                        <p className="text-[11px] text-stone-500">
+                          Thu ngân hướng dẫn khách mở app Ngân hàng để quét mã bên dưới
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-[11px] text-stone-500 mt-1">
-                      Nhân viên mang mã VietQR hoặc nhận tiền mặt tại bàn.
+                    <span className="text-xs font-mono font-black text-[#B26A3B] bg-white px-2.5 py-1 rounded-xl border border-amber-200 shadow-2xs">
+                      {formatCurrency(total)}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
+                    {/* QR Code Container */}
+                    <div className="flex flex-col items-center shrink-0">
+                      <div className="p-3 bg-white rounded-2xl border-2 border-amber-200 shadow-md">
+                        {!qrImgError ? (
+                          <img
+                            src={`https://img.vietqr.io/image/MB-0901234567-compact2.png?amount=${total}&addInfo=${encodeURIComponent(
+                              transferMemo
+                            )}&accountName=COFFEE%20HOUSE`}
+                            alt="VietQR MBBank"
+                            className="w-44 h-44 object-contain rounded-lg"
+                            onError={() => setQrImgError(true)}
+                          />
+                        ) : (
+                          <QRCodeSVG
+                            value={`2|99|0901234567|COFFEE HOUSE||0|0|${total}|${transferMemo}|transfer_myqr`}
+                            size={176}
+                            level="M"
+                            includeMargin={false}
+                          />
+                        )}
+                      </div>
+                      <span className="text-[10px] text-stone-400 mt-2 font-medium flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-amber-500" /> Quét mã NAPAS 247 tức thì
+                      </span>
+                    </div>
+
+                    {/* Bank Account Details with Copy Buttons */}
+                    <div className="flex-1 w-full space-y-2.5 text-xs">
+                      <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-amber-100">
+                        <span className="text-stone-500">Ngân hàng:</span>
+                        <span className="font-bold text-stone-900">
+                          MB Bank (Ngân Hàng Quân Đội)
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-amber-100">
+                        <span className="text-stone-500">Số tài khoản:</span>
+                        <div className="flex items-center gap-1.5">
+                          <strong className="font-mono text-stone-900 text-sm">0901234567</strong>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard('0901234567', 'Số tài khoản')}
+                            className="p-1 rounded-lg text-amber-700 hover:bg-amber-50 transition-colors"
+                            title="Sao chép số tài khoản"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-amber-100">
+                        <span className="text-stone-500">Chủ tài khoản:</span>
+                        <span className="font-bold text-stone-900 uppercase">
+                          COFFEE HOUSE ROASTERS
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-amber-100">
+                        <span className="text-stone-500">Số tiền:</span>
+                        <div className="flex items-center gap-1.5">
+                          <strong className="font-mono text-base font-black text-[#B26A3B]">
+                            {formatCurrency(total)}
+                          </strong>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(total.toString(), 'Số tiền')}
+                            className="p-1 rounded-lg text-amber-700 hover:bg-amber-50 transition-colors"
+                            title="Sao chép số tiền"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-amber-100">
+                        <span className="text-stone-500">Nội dung CK:</span>
+                        <div className="flex items-center gap-1.5">
+                          <strong className="font-mono text-stone-900 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                            {transferMemo}
+                          </strong>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(transferMemo, 'Nội dung chuyển khoản')}
+                            className="p-1 rounded-lg text-amber-700 hover:bg-amber-50 transition-colors"
+                            title="Sao chép nội dung"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Khối hiển thị chi tiết cho phương thức Tiền mặt */}
+              {paymentMethod === 'CASH' && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-emerald-50/80 via-white to-green-50/60 border border-emerald-300/80 shadow-xs space-y-4 animate-in fade-in duration-300">
+                  <div className="flex items-center justify-between pb-3 border-b border-emerald-200/60">
+                    <div className="flex items-center gap-2">
+                      <Banknote className="w-5 h-5 text-emerald-700" />
+                      <div>
+                        <h3 className="font-bold text-sm text-[#231709]">
+                          THANH TOÁN TIỀN MẶT TẠI QUẦY
+                        </h3>
+                        <p className="text-[11px] text-stone-500">
+                          Thu ngân trực tiếp thu tiền mặt và trả lại tiền thừa (nếu có)
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-xl">
+                      Tiền mặt
+                    </span>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-white border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <span className="text-xs text-stone-500 block">Số tiền mặt cần thu:</span>
+                      <span className="text-2xl font-black text-emerald-700 font-mono">
+                        {formatCurrency(total)}
+                      </span>
+                    </div>
+                    <div className="text-right sm:text-right text-[11px] text-stone-500">
+                      <span className="block font-medium text-stone-700">Quy trình thu ngân:</span>
+                      <span>Nhận tiền mặt &rarr; Đếm đủ &rarr; Tích chọn xác nhận bên dưới</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* KHỐI XÁC NHẬN ĐÃ THU TIỀN: NGƯỜI XÁC NHẬN LÀ THU NGÂN */}
+              <div
+                className={`p-4 sm:p-5 rounded-2xl border-2 transition-all ${
+                  isPaymentConfirmed
+                    ? 'bg-emerald-50/90 border-emerald-500 ring-2 ring-emerald-500/20 shadow-sm'
+                    : 'bg-amber-50/90 border-amber-400 ring-1 ring-amber-400/40'
+                }`}
+              >
+                <label className="flex items-start gap-3.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={isPaymentConfirmed}
+                    onChange={(e) => setIsPaymentConfirmed(e.target.checked)}
+                    className="w-5 h-5 accent-emerald-600 rounded-lg mt-0.5 cursor-pointer shrink-0"
+                  />
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-black text-xs sm:text-sm text-[#231709]">
+                        {paymentMethod === 'BANKING'
+                          ? 'THU NGÂN XÁC NHẬN: Đã nhận tiền chuyển khoản thành công'
+                          : `THU NGÂN XÁC NHẬN: Đã thu đủ ${formatCurrency(total)} tiền mặt từ khách`}
+                      </span>
+                      {isPaymentConfirmed ? (
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-black flex items-center gap-1">
+                          <Check className="w-3 h-3 stroke-[3]" /> THU NGÂN ĐÃ XÁC NHẬN
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[10px] font-bold">
+                          Thu ngân cần xác nhận ⚠️
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-stone-600 leading-relaxed">
+                      {paymentMethod === 'BANKING'
+                        ? 'Thu ngân kiểm tra ứng dụng ngân hàng / biến động số dư trước khi tích chọn. Sau khi xác nhận, đơn sẽ được gửi ngay đến quầy pha chế Barista.'
+                        : `Thu ngân đã nhận đủ ${formatCurrency(total)} tiền mặt từ khách hàng. Tích chọn để xác nhận và gửi đơn đến phòng pha chế Barista.`}
                     </p>
                   </div>
                 </label>
@@ -808,7 +1125,20 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {/* Cảnh báo chặn thanh toán */}
+              {/* Cảnh báo nếu thu ngân chưa xác nhận thu tiền */}
+              {!isPaymentConfirmed && (
+                <div className="p-3.5 rounded-2xl bg-amber-50 border-2 border-amber-300 text-xs text-amber-950 font-bold space-y-1">
+                  <div className="flex items-center gap-2 text-amber-800 font-black">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                    <span>THU NGÂN CHƯA XÁC NHẬN THU TIỀN:</span>
+                  </div>
+                  <p className="font-semibold text-amber-900 leading-relaxed text-[11px]">
+                    Thu ngân vui lòng kiểm tra thu tiền ({paymentMethod === 'BANKING' ? 'chuyển khoản' : 'tiền mặt'}) và tích chọn &ldquo;Thu ngân xác nhận đã thu tiền&rdquo; ở mục 3 để chuyển đơn xuống quầy Barista.
+                  </p>
+                </div>
+              )}
+
+              {/* Cảnh báo chặn thanh toán nếu bàn kín chỗ */}
               {(!selectedTable || isSelectedTableFull || selectedRemaining <= 0) && (
                 <div className="p-3.5 rounded-2xl bg-red-100 border-2 border-red-400 text-xs text-red-950 font-bold space-y-1">
                   <div className="flex items-center gap-2 text-red-700 font-black">
@@ -830,6 +1160,8 @@ export default function CheckoutPage() {
                 className={`w-full h-13 rounded-2xl font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg transition-all ${
                   !selectedTable || isSelectedTableFull || selectedRemaining <= 0
                     ? 'bg-stone-300 text-stone-500 cursor-not-allowed shadow-none border border-stone-300'
+                    : !isPaymentConfirmed
+                    ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-white shadow-amber-900/20 hover:opacity-95 active:scale-98'
                     : 'bg-gradient-to-r from-[#654321] to-[#B26A3B] text-white shadow-amber-950/20 hover:opacity-95 active:scale-98'
                 }`}
               >
@@ -842,8 +1174,10 @@ export default function CheckoutPage() {
                   'VUI LÒNG CHỌN BÀN CÒN TRỐNG 📍'
                 ) : isSelectedTableFull || selectedRemaining <= 0 ? (
                   '⛔ BÀN ĐÃ KÍN CHỖ - CHẶN THANH TOÁN'
+                ) : !isPaymentConfirmed ? (
+                  '🔒 THU NGÂN CHƯA XÁC NHẬN THU TIỀN'
                 ) : (
-                  'GỬI ĐƠN HÀNG ĐẾN BARISTA ☕'
+                  '☕ DUYỆT & GỬI ĐƠN XUỐNG BARISTA'
                 )}
               </button>
 

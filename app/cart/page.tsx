@@ -35,12 +35,6 @@ export default function CartPage() {
           <h1 className="text-2xl sm:text-3xl font-black text-[#231709] tracking-tight">
             Giỏ hàng của bạn
           </h1>
-          {tableName && (
-            <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-200/80 rounded-2xl px-3.5 py-1.5 text-xs font-semibold text-amber-900 shadow-xs">
-              <MapPin className="h-4 w-4 text-amber-700" />
-              <span>Đang gọi món tại <strong className="text-amber-800">{tableName}</strong></span>
-            </div>
-          )}
         </div>
 
         {items.length === 0 ? (
